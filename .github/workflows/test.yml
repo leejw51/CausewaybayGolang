@@ -1,0 +1,40 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  love2d:
+    name: make test (LÖVE, headless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LÖVE and xvfb
+        run: |
+          sudo add-apt-repository -y ppa:bartbes/love-stable
+          sudo apt-get update
+          sudo apt-get install -y love xvfb
+          love --version
+
+      - name: Run the test suite
+        # The tests open a tiny window and synthesize every sound effect, so
+        # give them a virtual display and a silent audio device.
+        env:
+          SDL_AUDIODRIVER: dummy
+          SDL_VIDEODRIVER: x11
+        run: xvfb-run -a make -C love2d test
+
+  format:
+    name: stylua --check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --check love2d/src love2d/tests love2d/main.lua love2d/conf.lua
