@@ -1,4 +1,4 @@
--- GO SET game flow:
+-- CAUSEWAYBAY GO game flow:
 --
 --   title  ->  map  ->  play  ->  (next map ...)  ->  win
 --            ^  ^        |
@@ -1211,11 +1211,12 @@ function Game:drawTitle()
   local smF = fontOf("small")
   local th, sh, uh, mh = titleF:getHeight(), subF:getHeight(), uiF:getHeight(), smF:getHeight()
 
-  local ty = ease.lerp(PORT and 28 or 20, PORT and 56 or 36, k)
+  -- Below the HUD row: the title is wide enough to run under its buttons.
+  local ty = TOP + ease.lerp(PORT and 4 or 0, PORT and 16 or 8, k)
   -- dark band so the title reads over the neon signs
   love.graphics.setColor(0.02, 0.02, 0.10, 0.62 * k)
   love.graphics.rectangle("fill", 0, ty - 14, W, th + sh + mh + 40)
-  neonPrint(titleF, "GO SET", 0, ty, COL.neon, self.t, "center")
+  neonPrint(titleF, "CAUSEWAYBAY GO", 0, ty, COL.neon, self.t, "center")
   love.graphics.setFont(subF)
   love.graphics.setColor(COL.gold[1], COL.gold[2], COL.gold[3], k)
   love.graphics.printf(T("subtitle"), 0, ty + th + 6, W, "center")

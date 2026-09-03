@@ -116,9 +116,100 @@ return function(t)
     t.eq(I18n.pick({ en = "a" }), "a", "missing translation falls back")
     I18n.cycle()
     t.eq(I18n.lang, "yue")
+    for _, want in ipairs({ "zh", "ja", "es", "cs" }) do
+      I18n.cycle()
+      t.eq(I18n.lang, want)
+      t.ok(I18n.t("hint") ~= "HINT", want .. " translates the HUD")
+      t.eq(I18n.pick({ en = "a" }, want), "a", want .. " falls back to English")
+    end
     I18n.cycle()
     t.eq(I18n.lang, "en")
     t.eq(I18n.pick("plain"), "plain")
+    I18n.set("en")
+  end)
+
+  -- The languages in src/lang/ are looked up by English text, so a string
+  -- rewritten in a data file silently drops back to English everywhere. This
+  -- walks every L() table in the data and the HUD and asks each table for it.
+  t.it("every string is translated in every src/lang language", function()
+    local I18n = require "src.i18n"
+    local strings = {}
+    local function walk(v, seen)
+      if type(v) ~= "table" or seen[v] then
+        return
+      end
+      seen[v] = true
+      if type(v.en) == "string" then
+        strings[#strings + 1] = v
+        return
+      end
+      for _, child in pairs(v) do
+        walk(child, seen)
+      end
+    end
+    for _, m in ipairs({ "src.data", "src.data_adv", "src.data_pro", "src.data_quiz" }) do
+      walk(require(m), {})
+    end
+    walk(I18n.STRINGS, {})
+    t.ok(#strings > 700, "found the strings (" .. #strings .. ")")
+    for _, lang in ipairs({ "zh", "ja", "es", "cs" }) do
+      local tr = I18n.TR[lang]
+      t.ok(tr ~= nil, lang .. " has src/lang/" .. lang .. ".lua")
+      local missing, bad = 0, {}
+      for _, v in ipairs(strings) do
+        local s = tr and tr[v.en]
+        if not s then
+          missing = missing + 1
+        else
+          for _, tok in ipairs({ "___", "%%s", "%%d" }) do
+            local _, a = v.en:gsub(tok, "")
+            local _, b = s:gsub(tok, "")
+            if a ~= b then
+              bad[#bad + 1] = v.en:sub(1, 40)
+            end
+          end
+        end
+      end
+      t.eq(missing, 0, lang .. " missing translations")
+      t.eq(#bad, 0, lang .. " keeps blanks and %s/%d: " .. table.concat(bad, " | "))
+    end
+  end)
+
+  -- Every glyph any language draws has to exist in the pixel fonts or the CJK
+  -- fallback, or LÖVE draws a box.
+  t.it("the fonts cover every language", function()
+    local I18n = require "src.i18n"
+    local Assets = require "src.assets"
+    local utf8 = require "utf8"
+    Assets.ensureFonts(1)
+    for _, lang in ipairs(I18n.LANGS) do
+      local text = {}
+      for _, v in pairs(I18n.STRINGS) do
+        text[#text + 1] = I18n.pick(v, lang)
+      end
+      local tr = I18n.TR[lang]
+      if tr then
+        for _, s in pairs(tr) do
+          text[#text + 1] = s
+        end
+      end
+      local all = table.concat(text, ""):gsub("[\n\t]", "")
+      for _, name in ipairs({ "ui", "small", "code", "subtitle" }) do
+        local f = Assets.font[name]
+        local missing = {}
+        for _, c in utf8.codes(all) do
+          local ch = utf8.char(c)
+          if not f:hasGlyphs(ch) then
+            missing[ch] = true
+          end
+        end
+        local list = {}
+        for ch in pairs(missing) do
+          list[#list + 1] = ch
+        end
+        t.eq(#list, 0, lang .. " " .. name .. " font lacks: " .. table.concat(list, ""))
+      end
+    end
   end)
 
   t.it("answers compare loosely", function()

@@ -1,4 +1,4 @@
-# GO SET — Love2D Causeway Bay
+# CAUSEWAYBAY GO — Love2D
 # Default: make help
 
 APP     := $(CURDIR)
@@ -13,7 +13,7 @@ STYLUA  := stylua
 .PHONY: help start run stop test format status drive version love package app notarize gatekeeper clean
 
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*##"; printf "\n  GO SET  //  Love2D\n\n"} \
+	@awk 'BEGIN {FS = ":.*##"; printf "\n  CAUSEWAYBAY GO  //  Love2D\n\n"} \
 		/^[a-zA-Z0-9_-]+:.*##/ { printf "  make %-10s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@printf "\n  F1 portrait/landscape   F11 window/fullscreen\n"
 	@printf "  setup JSONL lives in ~/.causewaybaygo\n\n"
@@ -86,8 +86,8 @@ format: ## Format Lua with stylua
 #
 # What a release ships. `make package` produces, in ../dist:
 #
-#   goset-<version>.love          the game as one archive, for any OS with LÖVE
-#   GoSet-macos.zip               a double-clickable macOS .app with LÖVE 11.5
+#   causewaybaygo-<version>.love  the game as one archive, for any OS with LÖVE
+#   CausewaybayGo-macos.zip       a double-clickable macOS .app with LÖVE 11.5
 #                                 embedded, signed (Developer ID when the
 #                                 machine has one, ad-hoc otherwise)
 #
@@ -99,15 +99,15 @@ format: ## Format Lua with stylua
 
 VERSION      := $(shell cat $(CURDIR)/../VERSION 2>/dev/null | tr -d '[:space:]')
 LOVE_VERSION ?= 11.5
-APP_NAME     := GoSet
-DISPLAY_NAME := GO SET
-BUNDLE_ID    := com.causewaybay.goset
+APP_NAME     := CausewaybayGo
+DISPLAY_NAME := CAUSEWAYBAY GO
+BUNDLE_ID    := com.causewaybay.go
 ICON         ?= assets/item_set.png
 LOVE_URL     := https://github.com/love2d/love/releases/download/$(LOVE_VERSION)/love-$(LOVE_VERSION)-macos.zip
 DIST_DIR     ?= $(abspath $(CURDIR)/../dist)
 BUILD        := $(CURDIR)/build
 APP          := $(BUILD)/$(APP_NAME).app
-GAME_LOVE    := $(DIST_DIR)/goset-$(VERSION).love
+GAME_LOVE    := $(DIST_DIR)/causewaybaygo-$(VERSION).love
 GAME_SRC     := main.lua conf.lua src assets
 
 .PHONY: version
@@ -136,14 +136,14 @@ love: ## Build the .love archive into ../dist
 .PHONY: verify-archive
 verify-archive:
 	@missing=""; \
-	for file in main.lua conf.lua $$(cd src && ls *.lua | sed 's|^|src/|'); do \
+	for file in main.lua conf.lua $$(find src -name '*.lua' | sort); do \
 		unzip -l "$(ARCHIVE)" 2>/dev/null | grep -qE " $$file$$" || missing="$$missing $$file"; \
 	done; \
 	if [ -n "$$missing" ]; then \
 		echo "  the archive is missing:$$missing" >&2; \
 		exit 1; \
 	fi; \
-	echo "  archive carries every module ($$(ls main.lua conf.lua src/*.lua | wc -l | tr -d ' ') files)"
+	echo "  archive carries every module ($$(find src -name '*.lua' | wc -l | tr -d ' ') + 2 files)"
 
 .PHONY: package
 package: ## Build the release: .love, plus a signed macOS .app on macOS

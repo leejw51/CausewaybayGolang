@@ -1,6 +1,7 @@
-# GO SET — Causeway Bay (Love2D)
+# CAUSEWAYBAY GO (Love2D)
 
-English · 한국어 · 粵語 (F3 or the top-right button; remembered between runs).
+English · 한국어 · 粵語 · 简体中文 · 日本語 · Español · Čeština (F3 or the top-right
+button; remembered between runs).
 
 A Wonder Boy-style 16-bit Go trainer. Alex, a Go coder in Causeway Bay, walks
 to **Lucky Mac** for a morning set (muffin, hash brown, coffee). Every kiosk
@@ -96,7 +97,7 @@ Answers are matched loosely (case, spaces, quotes, `_`, `-`, `.` ignored).
 
 ## Keys
 
-- **F3** / language button — English → 한국어 → 粵語
+- **F3** / language button — English → 한국어 → 粵語 → 简体中文 → 日本語 → Español → Čeština
 - **F4** — sound on/off (remembered). Every effect is synthesized at load:
   square, triangle, saw and noise voices rendered to 8-bit PCM at 22 kHz. No
   audio files. Keys click, the map hero steps, Alex's footsteps tick after

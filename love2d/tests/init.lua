@@ -12,7 +12,7 @@ local M = {}
 
 function M.run()
   print("")
-  print("GO SET  //  Love2D tests")
+  print("CAUSEWAYBAY GO  //  Love2D tests")
   for _, name in ipairs(SUITES) do
     local ok, suite = pcall(require, name)
     if not ok then

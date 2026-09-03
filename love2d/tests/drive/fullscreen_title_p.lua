@@ -8,7 +8,7 @@ local function at(dt, step)
 end
 at(0.1, { orient = "portrait" })
 at(0.2, { key = "f11" })
-for _, l in ipairs({ "en", "ko", "yue" }) do
+for _, l in ipairs({ "en", "ko", "yue", "zh", "ja", "es", "cs" }) do
   at(1.4, { shot = "f06_port_title_" .. l .. ".png" })
   at(0.1, { key = "f3" })
 end
