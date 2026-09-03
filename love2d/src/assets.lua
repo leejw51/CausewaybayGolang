@@ -195,7 +195,10 @@ local BODY = {
 
 local fontScaleKey = nil
 
-local CJK_PATH = "assets/fonts/NotoSansCJKkr-Regular.otf"
+-- Subset of Noto Sans CJK SC: Hangul, kana, every unified ideograph and the
+-- fullwidth forms, so Korean, Cantonese, Simplified Chinese and Japanese all
+-- draw from one file (see tests: "the fonts cover every language").
+local CJK_PATH = "assets/fonts/NotoSansCJK-Regular.otf"
 local cjkData = nil
 local cjkFonts = {}
 

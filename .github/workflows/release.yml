@@ -5,8 +5,8 @@
 # workflow_dispatch for a dry run that uploads the artifacts without creating
 # a release.
 #
-#   goset-<version>.love                       the game, for any OS with LÖVE 11
-#   GoSet-<version>-<arch>-apple-darwin.zip    a double-clickable .app with
+#   causewaybaygo-<version>.love                       the game, for any OS with LÖVE 11
+#   CausewaybayGo-<version>-<arch>-apple-darwin.zip    a double-clickable .app with
 #                                              LÖVE embedded, signed and
 #                                              notarised
 #
@@ -122,14 +122,14 @@ jobs:
           ARCH: ${{ steps.version.outputs.arch }}
         run: |
           mkdir -p artifacts
-          cp "dist/goset-$VERSION.love" artifacts/
-          cp "dist/GoSet-macos.zip" "artifacts/GoSet-$VERSION-$ARCH-apple-darwin.zip"
+          cp "dist/causewaybaygo-$VERSION.love" artifacts/
+          cp "dist/CausewaybayGo-macos.zip" "artifacts/CausewaybayGo-$VERSION-$ARCH-apple-darwin.zip"
           ( cd artifacts && shasum -a 256 * > SHA256SUMS )
           cat artifacts/SHA256SUMS
 
       - uses: actions/upload-artifact@v4
         with:
-          name: goset-macos-${{ steps.version.outputs.arch }}
+          name: causewaybaygo-macos-${{ steps.version.outputs.arch }}
           path: artifacts/*
           if-no-files-found: error
 
@@ -155,12 +155,12 @@ jobs:
           files: artifacts/*
           generate_release_notes: true
           body: |
-            GO SET — learn Go on the way to a morning set.
+            CAUSEWAYBAY GO — learn Go on the way to a morning set.
 
             | archive | what is inside |
             | --- | --- |
-            | `GoSet-…-apple-darwin.zip` | a double-clickable macOS `.app` with LÖVE inside, signed and notarised |
-            | `goset-….love` | the game as one archive: `love goset-….love` on any OS with LÖVE 11 |
+            | `CausewaybayGo-…-apple-darwin.zip` | a double-clickable macOS `.app` with LÖVE inside, signed and notarised |
+            | `causewaybaygo-….love` | the game as one archive: `love causewaybaygo-….love` on any OS with LÖVE 11 |
 
             Verify a download against `SHA256SUMS`. Progress and settings
             live in `~/.causewaybaygo`.

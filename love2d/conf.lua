@@ -3,7 +3,7 @@ function love.conf(t)
   t.identity = "goset-causewaybay"
   t.version = "11.4"
   t.console = false
-  t.window.title = "GO SET — Causeway Bay"
+  t.window.title = "CAUSEWAYBAY GO"
   t.window.width = testing and 320 or 1280
   t.window.height = testing and 180 or 720
   t.window.minwidth = testing and 160 or 960

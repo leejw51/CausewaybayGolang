@@ -1,4 +1,4 @@
-# GO SET — learn Go on the way to a morning set
+# CAUSEWAYBAY GO — learn Go on the way to a morning set
 
 A Wonder Boy / Super Mario World 16-bit trainer, same loop as its sibling
 CausewaybayZkp: title → map → type the blank → hint → answer.
@@ -20,19 +20,19 @@ Four quests, twenty-eight streets, 149 blanks. Every map dot is a Go topic:
 - **Q3 DELIVERY** — STRINGS · ERRORS · TYPES · JSON · HTTP · TOOLS · MODERN
 - **Q4 CODE RUSH** — RECURSE · TREE · GRAPH · LIST · SORT · HASH · WORKERS (the interview game show, with combos and PERFECT)
 
-F11 fullscreen, F1 portrait/landscape, F3 English / 한국어 / 粵語, F4 sound.
+F11 fullscreen, F1 portrait/landscape, F3 language (English, 한국어, 粵語, 简体中文, 日本語, Español, Čeština), F4 sound.
 Progress and settings are JSONL in `~/.causewaybaygo`.
 
 ## Release
 
 ```bash
-make package          # dist/goset-<version>.love, and on macOS dist/GoSet-macos.zip
+make package          # dist/causewaybaygo-<version>.love, and on macOS dist/CausewaybayGo-macos.zip
 make notarize         # staple Apple's ticket on the .app (APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID)
 make gatekeeper       # what Finder will say about it
 ```
 
 `make package` builds the `.love`, downloads LÖVE 11.5, embeds the game in a
-double-clickable `GoSet.app`, gives it the morning-set icon, signs it with the
+double-clickable `CausewaybayGo.app`, gives it the morning-set icon, signs it with the
 machine's Developer ID (ad-hoc when there is none) and runs the test suite from
 inside the bundle. The version of record is `./VERSION`.
 

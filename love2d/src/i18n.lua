@@ -1,9 +1,42 @@
--- English / Korean / Cantonese (Hong Kong written Chinese) for the UI.
+-- UI strings and the language switch.
+--
+-- English, Korean and Cantonese (Hong Kong written Chinese) are written inline
+-- here and in src/data*.lua as { en = , ko = , yue = } tables. The languages
+-- added later live in src/lang/<code>.lua as { ["English text"] = "..." } and
+-- are looked up by the English string, so the data files stay as they are.
+-- Anything missing in any language falls back to English.
 
 local I18n = { lang = "en" }
 
-I18n.LANGS = { "en", "ko", "yue" }
-I18n.NAMES = { en = "EN", ko = "한국어", yue = "粵語" }
+I18n.LANGS = { "en", "ko", "yue", "zh", "ja", "es", "cs" }
+I18n.NAMES = {
+  en = "EN",
+  ko = "한국어",
+  yue = "粵語",
+  zh = "简体中文",
+  ja = "日本語",
+  es = "Español",
+  cs = "Čeština",
+}
+
+-- The by-English tables, loaded once. A language with no file is inline-only.
+local TR = {}
+for _, code in ipairs(I18n.LANGS) do
+  local ok, t = pcall(require, "src.lang." .. code)
+  if ok and type(t) == "table" then
+    TR[code] = t
+  end
+end
+I18n.TR = TR
+
+local function lookup(v, lang)
+  local s = v[lang]
+  if s == nil then
+    local tr = TR[lang]
+    s = tr and tr[v.en]
+  end
+  return s or v.en
+end
 
 local S = {
   subtitle = { en = "Causeway Bay", ko = "코즈웨이베이", yue = "銅鑼灣" },
@@ -173,18 +206,20 @@ end
 
 function I18n.pick(v, lang)
   if type(v) == "table" then
-    return v[lang or I18n.lang] or v.en or ""
+    return lookup(v, lang or I18n.lang) or ""
   end
   return v == nil and "" or tostring(v)
 end
 
 function I18n.t(key, ...)
   local v = S[key]
-  local s = v and (v[I18n.lang] or v.en) or key
+  local s = v and lookup(v, I18n.lang) or key
   if select("#", ...) > 0 then
     return string.format(s, ...)
   end
   return s
 end
+
+I18n.STRINGS = S
 
 return I18n
