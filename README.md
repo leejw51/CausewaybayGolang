@@ -23,4 +23,21 @@ Four quests, twenty-eight streets, 149 blanks. Every map dot is a Go topic:
 F11 fullscreen, F1 portrait/landscape, F3 English / 한국어 / 粵語, F4 sound.
 Progress and settings are JSONL in `~/.causewaybaygo`.
 
+## Release
+
+```bash
+make package          # dist/goset-<version>.love, and on macOS dist/GoSet-macos.zip
+make notarize         # staple Apple's ticket on the .app (APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID)
+make gatekeeper       # what Finder will say about it
+```
+
+`make package` builds the `.love`, downloads LÖVE 11.5, embeds the game in a
+double-clickable `GoSet.app`, gives it the morning-set icon, signs it with the
+machine's Developer ID (ad-hoc when there is none) and runs the test suite from
+inside the bundle. The version of record is `./VERSION`.
+
+Pushing a tag `v<VERSION>` on `main` runs the same recipe on a macOS runner,
+notarises with the repository's Apple secrets, and attaches the `.app` zip,
+the `.love` and `SHA256SUMS` to a GitHub release.
+
 Details in [`love2d/README.md`](love2d/README.md).
