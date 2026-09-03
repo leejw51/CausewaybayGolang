@@ -3,6 +3,9 @@ name: test
 on:
   push:
     branches: [main]
+    # A tag push does not match `branches`, so a release would otherwise ship
+    # without the suite having run on the tagged commit.
+    tags: ["v*"]
   pull_request:
 
 jobs:
