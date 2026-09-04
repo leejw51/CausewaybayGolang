@@ -22,6 +22,9 @@ local UI = require "src.ui"
 local I18n = require "src.i18n"
 local SFX = require "src.sfx"
 local Ferris = require "src.ferris"
+local Monty = require "src.monty"
+local Share = require "src.share"
+local Stats = require "src.stats"
 local P = I18n.pick
 local T = I18n.t
 
@@ -295,6 +298,12 @@ function Game.new()
   g.actPrevStage, g.actNextStage = nil, nil
   g.swallowFrame = -1
   g.saved = nil
+  g.blankT = 0 -- seconds the current blank has been on screen (FAST bonus)
+  g.sheet = nil -- the SHARE sheet: copy / export, while it is open
+  g.shareScope = "street" -- what EXPORT covers: street / quest / track
+  g.sheetHits = {} -- { rect, action } per button of the sheet
+  g.actShare = nil
+  g.toast, g.toastT = nil, 0 -- COPIED / SAVED line over the scene
   return g
 end
 
@@ -338,6 +347,7 @@ function Game:load()
   SFX.warm()
   love.keyboard.setKeyRepeat(true)
   love.graphics.setBackgroundColor(Theme.sky)
+  Stats.load()
   self:ingestProgress(Persist.loadProgress())
   self:enterTitle()
 end
@@ -494,6 +504,31 @@ function Game:toggleTrack()
   self:setTrack(tracks[1].id)
 end
 
+-- Each track's colour on the map buttons and the haze, and its mascot: the
+-- coffee bird for Go, Ferris for Rust, Monty for Python. The mascot sheets
+-- came from Grok (tools/grok_image.sh); Ferris and Monty fall back to
+-- primitives when a sheet is missing, the bird to the morning set.
+local TRACK_COL = {
+  go = Theme.cyan,
+  rust = { 0.95, 0.47, 0.16, 1 },
+  python = { 0.36, 0.62, 0.92, 1 },
+}
+local TRACK_HAZE = {
+  go = { 0.02, 0.02, 0.10, 0.22 },
+  rust = { 0.32, 0.08, 0.02, 0.26 },
+  python = { 0.02, 0.10, 0.22, 0.28 },
+}
+function Game:drawMascot(track, x, y, h, opts)
+  opts = opts or {}
+  if track == "rust" then
+    Ferris.draw(x, y, h, self.t + (opts.phase or 0), opts)
+  elseif track == "python" then
+    Monty.draw(x, y, h, self.t + (opts.phase or 0), opts)
+  elseif not assets.mascot("sprite_gogo", x, y, h, self.t + (opts.phase or 0), opts) then
+    sprites.item("item_set", x, y - h * 0.5, h, math.sin(self.t * 2) * 0.1)
+  end
+end
+
 function Game:isCleared(i)
   local m = self:maps()[i]
   return m ~= nil and self.cleared[m.id] == true
@@ -549,6 +584,7 @@ function Game:enterMap(from)
   end
   self.mapFrom = from
   self:stopAuto()
+  self.sheet = nil
   self.state = "map"
   self.mapK = 0
   self.fade = math.min(self.fade, 0.35)
@@ -579,7 +615,7 @@ function Game:mapPanelH()
   local pad = PORT and 10 or 24
   local smF = fontOf("small")
   local _, helpLines = smF:getWrap(self:mapHelpText(), W - pad * 2 - 36)
-  return fontOf("ui"):getHeight() + smF:getHeight() * (1 + math.max(1, #helpLines)) + 44
+  return fontOf("ui"):getHeight() + smF:getHeight() * (2 + math.max(1, #helpLines)) + 44
 end
 
 -- The GO / RUST switch sits in a bar right under the HUD on the map.
@@ -720,12 +756,14 @@ end
 
 function Game:enterWin()
   self.auto = false
+  self.sheet = nil
   self.state = "win"
   self.winT = 0
   SFX.play("win")
   self.fade = 1
   self:burst(W * 0.5, H * 0.4, 80)
   self:save()
+  self:reward(Stats.onStamp(self), true)
 end
 
 function Game:loadMap(i)
@@ -752,6 +790,8 @@ function Game:loadMap(i)
   self.mapT = 0
   self.idle = 0
   self.enterK = 0
+  self.blankT = 0
+  self.sheet = nil
 end
 
 function Game:map()
@@ -836,12 +876,22 @@ function Game:updateTitle(dt)
   end
 end
 
+-- Big pops (PERFECT, LEVEL UP, a badge) hang longer than a COMBO or +XP.
+local BIG_POP = { perfect = true, level = true, badge = true }
+local function popLife(p)
+  return BIG_POP[p.kind] and 2.4 or 1.3
+end
+
 function Game:updatePlay(dt)
   self.mapT = self.mapT + dt
+  self.toastT = math.max(0, self.toastT - dt)
+  if not self.solved and not self.sheet then
+    self.blankT = self.blankT + dt
+  end
   for i = #self.pops, 1, -1 do
     local p = self.pops[i]
     p.t = p.t + dt
-    if p.t > (p.kind == "perfect" and 2.4 or 1.3) then
+    if p.t > popLife(p) then
       table.remove(self.pops, i)
     end
   end
@@ -1009,6 +1059,40 @@ function Game:pop(text, kind)
   self.pops[#self.pops + 1] = { text = text, kind = kind or "combo", t = 0 }
 end
 
+-- What Stats hands back after an answer, a CLEAR or a stamp: +XP, FAST,
+-- badges and a level. Pops in the scene, a burst and a jingle for the big ones.
+function Game:reward(r, quiet)
+  if not r then
+    return
+  end
+  if (r.xp or 0) > 0 and not quiet then
+    local text = T("xp_gain", r.xp)
+    if r.fast then
+      text = text .. "   " .. T("fast")
+    end
+    self:pop(text, "xp")
+  end
+  for _, id in ipairs(r.badges or {}) do
+    local def = Stats.badgeDef(id)
+    if def then
+      self:pop(T("badge_pop", T(def.name)), "badge")
+      self:burst(W * 0.5, TOP + SCENE_H * 0.3, 40)
+      SFX.play("hint")
+    end
+  end
+  if r.level then
+    self:pop(T("level_up", r.level), "level")
+    self:burst(W * 0.5, TOP + SCENE_H * 0.35, 70)
+    SFX.play("clear")
+  end
+end
+
+-- One line over the scene for a few seconds: COPIED, SAVED, FAILED.
+function Game:setToast(text)
+  self.toast = text
+  self.toastT = 3.5
+end
+
 function Game:setHint(level)
   if level >= 2 and self.hintLevel < 2 and not self.solved then
     self.streak = 0
@@ -1058,6 +1142,8 @@ function Game:submit()
     if self.streak >= 2 then
       self:pop(T("combo", self.streak), "combo")
     end
+    self:reward(Stats.onAnswer(self, true, self.blankT))
+    self.blankT = 0
     self.done[self.stage] = true
     local open = self:firstOpenStage()
     if open then
@@ -1086,6 +1172,7 @@ function Game:submit()
       else
         SFX.play("clear")
       end
+      self:reward(Stats.onClear(self, self.perfect))
     end
     self:save()
   else
@@ -1098,6 +1185,7 @@ function Game:submit()
       self.misses = self.misses + 1
       self:setHint(math.max(self.hintLevel, 1))
       SFX.play("bad")
+      Stats.onAnswer(self, false, self.blankT)
     end
     self.msgKind = "bad"
     self.shake = 10
@@ -1164,6 +1252,7 @@ function Game:gotoStage(k)
   self:setHint(0)
   self.hintAuto = false
   self.idle = 0
+  self.blankT = 0
   SFX.play("move")
   self:save()
 end
@@ -1223,6 +1312,9 @@ function Game:draw()
   love.graphics.setScissor()
 
   self:drawHud()
+  if self.state == "play" and self.sheet then
+    self:drawSheet()
+  end
 
   if self.flash > 0 then
     if self.flashKind == "good" then
@@ -1304,20 +1396,19 @@ function Game:drawTitle()
   love.graphics.printf(T("subtitle"), 0, ty + th + 6, W, "center")
   love.graphics.setFont(smF)
   love.graphics.setColor(COL.cream[1], COL.cream[2], COL.cream[3], k * 0.95)
-  love.graphics.printf(T(self:track() == "rust" and "tagline_rust" or "tagline"), 0, ty + th + sh + 12, W, "center")
+  local tagline = ({ rust = "tagline_rust", python = "tagline_py" })[self:track()] or "tagline"
+  love.graphics.printf(T(tagline), 0, ty + th + sh + 12, W, "center")
 
   local hx = ease.lerp(-ch, W * 0.18, k)
-  if self:track() == "rust" then
-    -- Ferris scuttles ahead of the group on the Rust track
-    Ferris.draw(hx - gap * 0.55, gy, ch * 0.42, self.t, { walk = self.intro < 1, look = 1 })
-  end
+  -- the track's mascot scuttles ahead of the group
+  self:drawMascot(self:track(), hx - gap * 0.55, gy, ch * 0.42, { walk = self.intro < 1, look = 1 })
   sprites.draw("hero", hx, gy, { t = self.t, walk = self.intro < 1, facing = 1, h = ch })
   sprites.draw("mei", hx + gap, gy, { t = self.t + 0.4, walk = self.intro < 1, facing = 1, h = ch })
   sprites.draw("cook", hx + gap * 1.9, gy, { t = self.t + 0.9, walk = self.intro < 1, facing = 1, h = ch })
   sprites.draw("clerk", W * 0.78, gy, { t = self.t, facing = -1, h = ch })
   sprites.item("item_set", W * 0.88, gy - ch * 0.28, ch * 0.38, math.sin(self.t) * 0.1)
 
-  local bar = 24 + uh + 6 + mh + 6 + mh + 6 + mh + 12
+  local bar = 24 + uh + 6 + mh + 6 + mh + 6 + mh + 6 + mh + 12
   UI.panel(12, H - bar - 8, W - 24, bar, Theme.panel)
   local blink = 0.55 + 0.45 * (0.5 + 0.5 * math.cos(self.t * 3.2))
   love.graphics.setFont(uiF)
@@ -1349,6 +1440,10 @@ function Game:drawTitle()
     W - 24,
     "center"
   )
+  -- the player's level, XP and badge count, from stats.jsonl
+  local S = Stats.s
+  setC(Theme.ink, 0.9 * k)
+  love.graphics.printf(T("xp_short", S.level, S.xp, #S.badges), 12, H - bar + 12 + uh + (mh + 6) * 2, W - 24, "center")
   setC(Theme.ink, 0.8 * k)
   love.graphics.printf(T("title_help"), 12, H - 16 - mh, W - 24, "center")
 end
@@ -1480,12 +1575,9 @@ function Game:drawOverworldBg()
   local sc = math.max(W / iw, H / ih)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.draw(img, (W - iw * sc) * 0.5, (H - ih * sc) * 0.5, 0, sc, sc)
-  -- haze so dots and labels pop: a blue night for Go, a rust sunset for Rust
-  if self:track() == "rust" then
-    love.graphics.setColor(0.32, 0.08, 0.02, 0.26)
-  else
-    love.graphics.setColor(0.02, 0.02, 0.10, 0.22)
-  end
+  -- haze so dots and labels pop: a blue night for Go, a rust sunset for
+  -- Rust, deep midnight for Python
+  setC(TRACK_HAZE[self:track()] or TRACK_HAZE.go)
   love.graphics.rectangle("fill", 0, 0, W, H)
 end
 
@@ -1494,7 +1586,7 @@ end
 function Game:trackBtn(x, y, w, h, track, lit)
   local def = Quests.trackDef(track)
   local hit = Layout.hit(x, y, w, h)
-  local col = track == "rust" and { 0.95, 0.47, 0.16, 1 } or Theme.cyan
+  local col = TRACK_COL[track] or Theme.cyan
   local pop = 1 + (lit and 0.12 * (1 - ease.expOut(self.trackK)) or 0)
   love.graphics.push()
   love.graphics.translate(x + w * 0.5, y + h * 0.5)
@@ -1529,20 +1621,18 @@ end
 function Game:drawTrackBar()
   local barH = self:trackBarH()
   local bw, bh = TRACK_BTN_W, barH - 10
-  local gap = 28
+  local n = #Quests.TRACKS
+  local gap = PORT and 16 or 28
   local y = TOP + 6
-  local x0 = math.floor(W * 0.5 - bw - gap * 0.5)
+  local x0 = math.floor(W * 0.5 - (n * bw + (n - 1) * gap) * 0.5)
   self.trackHits = {}
   for i, def in ipairs(Quests.TRACKS) do
     local x = x0 + (i - 1) * (bw + gap)
     local lit = def.id == self:track()
     self:trackBtn(x, y, bw, bh, def.id, lit)
     self.trackHits[#self.trackHits + 1] = { { x, y, bw, bh }, def.id }
-    if def.item == "ferris" then
-      Ferris.draw(x + bw + 34, y + bh - 2, 34, self.t, { walk = lit, look = -1 })
-    elseif def.item then
-      sprites.item(def.item, x - 30, y + bh * 0.5, 40, math.sin(self.t * 2) * (lit and 0.12 or 0))
-    end
+    -- the track's mascot peeks over the button's top-right corner
+    self:drawMascot(def.id, x + bw - 14, y + 10, lit and 40 or 32, { walk = lit, look = -1, phase = i })
   end
 end
 
@@ -1623,6 +1713,8 @@ function Game:drawMap()
       sprites.item("item_hashbrown", nd.x - 42, nd.y - 36, 48, 0.1)
     elseif m.id:sub(1, 3) == "rs_" and (i == 1 or i == n) then
       Ferris.draw(nd.x - 44, nd.y - 20, 28, self.t + i, { look = 1 })
+    elseif m.id:sub(1, 3) == "py_" and (i == 1 or i == n) then
+      Monty.draw(nd.x - 44, nd.y - 20, 30, self.t + i, { look = 1 })
     end
     setC(Theme.ink)
     love.graphics.circle("fill", nd.x, nd.y, 17)
@@ -1729,8 +1821,27 @@ function Game:drawMap()
   love.graphics.setFont(smF)
   setC(Theme.navy)
   love.graphics.print(P(m.name) .. "  -  " .. P(m.title), pad + 18, py + 14 + line + 6)
+  -- level and XP, with a bar toward the next level, and the badge count
+  local S = Stats.s
+  local into, size = Stats.progress()
+  local xpText = T("xp_line", S.level, into, size) .. "   " .. T("badges_head") .. " " .. #S.badges
+  local xy = py + 14 + line + 6 + sub + 4
+  setC(Theme.brick)
+  love.graphics.print(xpText, pad + 18, xy)
+  local barX = pad + 18 + smF:getWidth(xpText) + 16
+  local barW = math.max(40, W - pad - 18 - barX)
+  setC(Theme.ink, 0.5)
+  love.graphics.rectangle("fill", barX, xy + math.floor(sub * 0.5) - 4, barW, 8)
+  setC(Theme.coin)
+  love.graphics.rectangle(
+    "fill",
+    barX + 1,
+    xy + math.floor(sub * 0.5) - 3,
+    math.floor((barW - 2) * math.min(1, into / math.max(1, size))),
+    6
+  )
   setC(Theme.ink, 0.85)
-  love.graphics.printf(self:mapHelpText(), pad + 18, py + 14 + line + 6 + sub + 6, W - pad * 2 - 36, "center")
+  love.graphics.printf(self:mapHelpText(), pad + 18, xy + sub + 4, W - pad * 2 - 36, "center")
 end
 
 function Game:drawPlay()
@@ -1758,47 +1869,60 @@ function Game:drawPlay()
   love.graphics.print(label, 22, 8 + 8)
   self.mapBtn = { 10, TOP + 8, lw, lh }
 
-  -- streak chip while a run is going
+  -- SHARE sits top-right of the scene; the streak chip bobs beside it
+  local shareW, shareH = btnBox({ T("share") }, 84, 24, 30)
+  self.actShare = { W - shareW - 10, TOP + 8, shareW, shareH }
   if self.streak >= 2 and not self.solved then
     local sf = fontOf("station")
     local s = T("streak", self.streak)
     local sw = sf:getWidth(s) + 24
     local sh = sf:getHeight() + 12
     local bob = math.sin(self.t * 6) * 2
-    UI.well(W - sw - 10, 8 + bob, sw, sh, { 0.30, 0.05, 0.05, 0.92 })
+    local sx = W - shareW - 18 - sw
+    UI.well(sx, 8 + bob, sw, sh, { 0.30, 0.05, 0.05, 0.92 })
     love.graphics.setFont(sf)
     setC(COL.gold)
-    love.graphics.print(s, W - sw + 2, 14 + bob)
+    love.graphics.print(s, sx + 12, 14 + bob)
   end
-  -- COMBO / PERFECT pop-ups: slam in, hang, drift up
+  -- COMBO / +XP / PERFECT / LEVEL UP / BADGE pop-ups: slam in, hang, drift
+  -- up. Big ones stack downward so a PERFECT and a badge both read.
+  local bigAt, smallAt = 0, 0
   for _, p in ipairs(self.pops) do
-    local perfect = p.kind == "perfect"
-    local life = perfect and 2.4 or 1.3
-    local k = ease.expOut(math.min(1, p.t * (perfect and 3 or 5)))
+    local big = BIG_POP[p.kind] == true
+    local life = popLife(p)
+    local k = ease.expOut(math.min(1, p.t * (big and 3 or 5)))
     local fade = ease.clamp((life - p.t) / 0.35, 0, 1)
-    local f = assets.font.title
+    local f = big and assets.font.title or assets.font.ui
     local text = p.text
     local tw = f:getWidth(text)
-    local sc = perfect and (1.3 - 0.3 * k) or (1.5 - 0.5 * k)
-    local y = SCENE_H * (perfect and 0.30 or 0.22) - p.t * 18
+    local sc = big and (1.3 - 0.3 * k) or (1.5 - 0.5 * k)
     local th = f:getHeight()
+    local y
+    if big then
+      y = SCENE_H * 0.30 + bigAt * (th + 22) - p.t * 18
+      bigAt = bigAt + 1
+    else
+      y = SCENE_H * 0.14 + smallAt * (th + 16) - p.t * 18
+      smallAt = smallAt + 1
+    end
+    local col = ({ perfect = COL.gold, level = COL.gold, badge = COL.cyan, xp = COL.admit })[p.kind] or COL.neon
     love.graphics.push()
     love.graphics.translate(W * 0.5, y)
-    love.graphics.rotate(perfect and -0.06 or 0.04)
+    love.graphics.rotate(big and -0.06 or 0.04)
     love.graphics.scale(sc)
     love.graphics.setFont(f)
     -- dark plate so it reads over any crowd
     love.graphics.setColor(0.05, 0.02, 0.10, 0.82 * fade)
     roundrect("fill", -tw * 0.5 - 16, -8, tw + 32, th + 16, 8)
-    setC(perfect and COL.gold or COL.neon, 0.9 * fade)
+    setC(col, 0.9 * fade)
     roundrect("line", -tw * 0.5 - 16, -8, tw + 32, th + 16, 8)
     love.graphics.setColor(0.05, 0.02, 0.10, 0.85 * fade)
     love.graphics.print(text, -tw * 0.5 + 3, 3)
-    if perfect then
+    if p.kind == "perfect" or p.kind == "level" then
       local pulse = 0.5 + 0.5 * math.sin(p.t * 14)
       love.graphics.setColor(1, 0.85 + 0.15 * pulse, 0.25, fade)
     else
-      setC(COL.neon, fade)
+      setC(col, fade)
     end
     love.graphics.print(text, -tw * 0.5, 0)
     love.graphics.pop()
@@ -1825,6 +1949,24 @@ function Game:drawPlay()
 
   love.graphics.pop()
   love.graphics.setScissor()
+
+  -- SHARE (screen coordinates, so the hover test lines up)
+  local sb = self.actShare
+  self:pixBtn(sb[1], sb[2], sb[3], sb[4], T("share"), self.sheet ~= nil)
+  -- the COPIED / SAVED toast, bottom of the scene
+  if self.toast and self.toastT > 0 then
+    local tf = fontOf("small")
+    local fade = math.min(1, self.toastT / 0.4)
+    local tw = math.min(W - 40, tf:getWidth(self.toast) + 28)
+    local _, tlines = tf:getWrap(self.toast, tw - 28)
+    local th = tf:getHeight() * math.max(1, #tlines) + 12
+    local tx = math.floor((W - tw) * 0.5)
+    local ty = TOP + SCENE_H - th - 10
+    UI.well(tx, ty, tw, th, { 0.05, 0.22, 0.10, 0.94 * fade })
+    love.graphics.setFont(tf)
+    setC(Theme.cream, fade)
+    love.graphics.printf(self.toast, tx + 14, ty + 6, tw - 28, "center")
+  end
 
   self:drawTerminal(m)
 end
@@ -2381,11 +2523,12 @@ function Game.viz.workers(self, m)
   )
 end
 
--- The Rust track: every street describes its own scene as `chips` (short
--- code, lit one after another) and a `note`, with Ferris scuttling about.
+-- The Rust and Python tracks, and the BIG O quests: every street describes
+-- its own scene as `chips` (short code, lit one after another) and a `note`,
+-- with the track's mascot scuttling about.
 local CHIP_FILL = { cyan = nil, gold = GOLDBG, pink = PINKBG, green = GREENBG }
 local CHIP_INK = { cyan = COL.cyan, gold = Theme.coin, pink = COL.neon, green = Theme.admit }
-function Game.viz.rust(self, m)
+local function chipsScene(self, m)
   local chips = m.chips or {}
   local n = #chips
   local lit = 1 + math.floor(self.t * 1.1) % math.max(1, n)
@@ -2419,7 +2562,13 @@ function Game.viz.rust(self, m)
     love.graphics.print(m.note, 300, y0 + n * step + 2)
   end
   local fx = 940 + math.sin(self.t * 0.6) * 60
-  Ferris.draw(fx, 196, 52, self.t, { walk = true, facing = math.cos(self.t * 0.6) >= 0 and 1 or -1, look = 1 })
+  self:drawMascot(
+    self:track(),
+    fx,
+    196,
+    52,
+    { walk = true, facing = math.cos(self.t * 0.6) >= 0 and 1 or -1, look = 1 }
+  )
   if self.solved then
     love.graphics.setFont(assets.font.stamp)
     local k = ease.expOut(self.stamp)
@@ -2427,6 +2576,9 @@ function Game.viz.rust(self, m)
     love.graphics.printf("OK", fx - 100, 96 - k * 12, 200, "center")
   end
 end
+Game.viz.rust = chipsScene
+Game.viz.python = chipsScene
+Game.viz.chips = chipsScene
 
 -- The bottom half: story + question (left), code with the blank (right),
 -- the input prompt, and HINT / OK / NEXT buttons.
@@ -2809,6 +2961,15 @@ function Game:drawWin()
   love.graphics.setFont(uiF)
   setC(Theme.ink, k)
   love.graphics.print(T(win.head or "win_head"), pad + 14, recapY + 12)
+  love.graphics.setFont(smF)
+  setC(Theme.brick, k)
+  love.graphics.printf(
+    T("xp_short", Stats.s.level, Stats.s.xp, #Stats.s.badges),
+    pad,
+    recapY + 12,
+    W - pad * 2 - 14,
+    "right"
+  )
   local y = recapY + 12 + uh + 10
   love.graphics.setFont(smF)
   for i = 1, #self:maps() do
@@ -2824,6 +2985,207 @@ function Game:drawWin()
   love.graphics.setFont(smF)
   love.graphics.setColor(Theme.ink[1], Theme.ink[2], Theme.ink[3], blink * k)
   love.graphics.printf(T("win_help"), pad, recapY + recapH - mh - 10, W - pad * 2, "center")
+end
+
+-- ---------------------------------------------------------------- share
+--
+-- The SHARE sheet (F6, or the button top-right of the scene) lays out two
+-- columns: COPY the blank on screen (question, hint, answer or all of it) to
+-- the clipboard, so the player can paste it to their AI and ask why; EXPORT
+-- the street, the quest or the whole track to ~/Downloads as Markdown, CSV,
+-- JSONL, plain text, SQLite, or the PNG "disk". Digits and letters pick.
+
+local SHEET_ITEMS = {
+  { "q", "copy_q" },
+  { "hint", "copy_hint" },
+  { "answer", "copy_answer" },
+  { "all", "copy_all" },
+}
+local SHEET_EXPORTS = {
+  { "md", "exp_md" },
+  { "csv", "exp_csv" },
+  { "jsonl", "exp_jsonl" },
+  { "txt", "exp_txt" },
+  { "sqlite", "exp_sqlite" },
+  { "png", "exp_png" },
+  { "allfmt", "exp_all" },
+}
+local SHEET_KEYS = {
+  ["1"] = "q",
+  ["2"] = "hint",
+  ["3"] = "answer",
+  ["4"] = "all",
+  ["5"] = "md",
+  ["6"] = "csv",
+  ["7"] = "jsonl",
+  ["8"] = "txt",
+  ["9"] = "sqlite",
+  ["0"] = "png",
+  a = "allfmt",
+  s = "scope",
+}
+
+function Game:openSheet()
+  if self.state ~= "play" then
+    return
+  end
+  self:stopAuto()
+  self.sheet = { t = 0 }
+  self.sheetHits = {}
+  SFX.play("open")
+end
+
+function Game:closeSheet()
+  if self.sheet then
+    self.sheet = nil
+    SFX.play("back")
+  end
+end
+
+function Game:toggleSheet()
+  if self.sheet then
+    self:closeSheet()
+  else
+    self:openSheet()
+  end
+end
+
+function Game:cycleScope()
+  for i, sc in ipairs(Share.SCOPES) do
+    if sc == self.shareScope then
+      self.shareScope = Share.SCOPES[i % #Share.SCOPES + 1]
+      SFX.play("move")
+      return
+    end
+  end
+  self.shareScope = Share.SCOPES[1]
+end
+
+-- One button of the sheet. Copies and exports stay on the sheet, so a
+-- player can take several formats in a row; the toast says what happened.
+function Game:sheetAction(id)
+  if id == "scope" then
+    self:cycleScope()
+    return
+  end
+  local isCopy = false
+  for _, it in ipairs(SHEET_ITEMS) do
+    if it[1] == id then
+      isCopy = true
+    end
+  end
+  if isCopy then
+    local ok = Share.copy(self, id)
+    if ok then
+      self:setToast(
+        T(
+          "toast_copied",
+          T(({ q = "copy_q", hint = "copy_hint", answer = "copy_answer", all = "copy_all" })[id]):sub(4)
+        )
+      )
+      SFX.play("ok")
+      self:reward(Stats.onShare("copy"), true)
+    else
+      self:setToast(T("toast_fail", "clipboard"))
+      SFX.play("deny")
+    end
+    return
+  end
+  if id == "allfmt" then
+    local paths, err = Share.exportAll(self, self.shareScope)
+    if #paths > 0 then
+      self:setToast(T("toast_saved_n", #paths, Share.shortHome(Share.downloads())))
+      SFX.play("clear")
+      self:reward(Stats.onShare("export"), true)
+    else
+      self:setToast(T("toast_fail", tostring(err)))
+      SFX.play("deny")
+    end
+    return
+  end
+  local path, err = Share.export(self, id, self.shareScope)
+  if path then
+    self:setToast(T("toast_saved", path:match("([^/]+)$") or path))
+    SFX.play(id == "png" and "clear" or "ok")
+    self:reward(Stats.onShare("export"), true)
+  else
+    self:setToast(T("toast_fail", tostring(err)))
+    SFX.play("deny")
+  end
+end
+
+function Game:drawSheet()
+  local sh = self.sheet
+  sh.t = math.min(1, (sh.t or 0) + 1 / 30)
+  local k = ease.expOut(sh.t)
+  love.graphics.setColor(0, 0, 0, 0.62 * k)
+  love.graphics.rectangle("fill", 0, 0, W, H)
+
+  local uiF, smF = fontOf("ui"), fontOf("small")
+  local btnW, btnH = btnBox({
+    T("copy_q"),
+    T("copy_hint"),
+    T("copy_answer"),
+    T("copy_all"),
+    T("scope_street"),
+    T("scope_quest"),
+    T("scope_track"),
+    T("exp_md"),
+    T("exp_csv"),
+    T("exp_jsonl"),
+    T("exp_txt"),
+    T("exp_sqlite"),
+    T("exp_png"),
+    T("exp_all"),
+  }, 200, 28, 36)
+  local gap = 6
+  local colW = btnW
+  local pad = 22
+  local pw = math.min(W - 24, colW * 2 + pad * 3)
+  local rows = #SHEET_EXPORTS + 1
+  local ph = 14 + uiF:getHeight() + 10 + smF:getHeight() + 8 + rows * (btnH + gap) + 10 + smF:getHeight() * 2 + 18
+  if ph > H - 20 then
+    ph = H - 20
+  end
+  local px = math.floor((W - pw) * 0.5)
+  local py = math.floor((H - ph) * 0.5) + (1 - k) * 30
+  sh.rect = { px, py, pw, ph }
+  UI.panel(px, py, pw, ph, Theme.panel)
+  love.graphics.setFont(uiF)
+  setC(Theme.ink)
+  love.graphics.printf(T("share_title"), px, py + 14, pw, "center")
+  local y0 = py + 14 + uiF:getHeight() + 10
+  local lx = px + pad
+  local rx = px + pad * 2 + colW
+  love.graphics.setFont(smF)
+  setC(Theme.brick)
+  love.graphics.printf(T("share_copy_head"), lx, y0, colW, "left")
+  love.graphics.printf(T("share_export_head"), rx, y0, colW, "left")
+  local y = y0 + smF:getHeight() + 8
+  self.sheetHits = {}
+  for i, it in ipairs(SHEET_ITEMS) do
+    local by = y + (i - 1) * (btnH + gap)
+    self:pixBtn(lx, by, colW, btnH, T(it[2]))
+    self.sheetHits[#self.sheetHits + 1] = { { lx, by, colW, btnH }, it[1] }
+  end
+  -- the mascot keeps the copy column company
+  self:drawMascot(self:track(), lx + colW * 0.5, y + #SHEET_ITEMS * (btnH + gap) + 86, 78, { walk = true, look = 1 })
+  local scopeKey = ({ street = "scope_street", quest = "scope_quest", track = "scope_track" })[self.shareScope]
+  self:pixBtn(rx, y, colW, btnH, T(scopeKey), true)
+  self.sheetHits[#self.sheetHits + 1] = { { rx, y, colW, btnH }, "scope" }
+  for i, it in ipairs(SHEET_EXPORTS) do
+    local by = y + i * (btnH + gap)
+    self:pixBtn(rx, by, colW, btnH, T(it[2]))
+    self.sheetHits[#self.sheetHits + 1] = { { rx, by, colW, btnH }, it[1] }
+  end
+  local hy = py + ph - 14 - smF:getHeight() * 2
+  love.graphics.setFont(smF)
+  setC(Theme.ink, 0.8)
+  love.graphics.printf(T("share_help"), px + 12, hy, pw - 24, "center")
+  if self.toast and self.toastT > 0 then
+    setC(Theme.admit)
+    love.graphics.printf(self.toast, px + 12, hy + smF:getHeight(), pw - 24, "center")
+  end
 end
 
 -- ---------------------------------------------------------------- input
@@ -2905,6 +3267,21 @@ function Game:keypressed(key)
   end
 
   -- play
+  if key == "f6" then
+    self:toggleSheet()
+    return
+  end
+  if self.sheet then
+    if key == "escape" then
+      self:closeSheet()
+    else
+      local id = SHEET_KEYS[key] or SHEET_KEYS[key:match("^kp(%d)$") or ""]
+      if id then
+        self:sheetAction(id)
+      end
+    end
+    return
+  end
   if key == "f5" then
     self:toggleAuto()
     return
@@ -2941,7 +3318,7 @@ function Game:textinput(text)
   if self.frame == self.swallowFrame then
     return
   end
-  if self.state ~= "play" or self.solved then
+  if self.state ~= "play" or self.solved or self.sheet then
     return
   end
   if text == "\t" or text == "\n" or text == "\r" then
@@ -3019,6 +3396,22 @@ function Game:mousepressed(x, y, button)
   end
 
   -- play
+  if self.sheet then
+    for _, h in ipairs(self.sheetHits) do
+      if inRect(vx, vy, h[1]) then
+        self:sheetAction(h[2])
+        return
+      end
+    end
+    if not inRect(vx, vy, self.sheet.rect) then
+      self:closeSheet()
+    end
+    return
+  end
+  if inRect(vx, vy, self.actShare) then
+    self:openSheet()
+    return
+  end
   if inRect(vx, vy, self.actAuto) then
     self:toggleAuto()
     return

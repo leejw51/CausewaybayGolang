@@ -6,8 +6,10 @@ LOVE    := love
 PIDFILE := $(CURDIR)/.goset-love.pid
 LOGFILE := $(CURDIR)/.goset-love.log
 SRC     := main.lua conf.lua src tests tools
-RUST_DATA := src/data_rs.lua src/data_rs_adv.lua src/data_rs_pro.lua src/data_rs_quiz.lua
-ALL_DATA  := src/data.lua src/data_adv.lua src/data_pro.lua src/data_quiz.lua $(RUST_DATA)
+RUST_DATA := src/data_rs.lua src/data_rs_adv.lua src/data_rs_pro.lua src/data_rs_quiz.lua src/data_rs_bigo.lua src/data_rs_callback.lua
+PY_DATA   := src/data_py.lua src/data_py_adv.lua src/data_py_quiz.lua src/data_py_bigo.lua src/data_py_callback.lua
+CHIP_DATA := $(RUST_DATA) $(PY_DATA) src/data_bigo.lua src/data_callback.lua
+ALL_DATA  := src/data.lua src/data_adv.lua src/data_pro.lua src/data_quiz.lua $(CHIP_DATA)
 STYLUA  := stylua
 
 .DEFAULT_GOAL := help
@@ -17,8 +19,9 @@ STYLUA  := stylua
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\n  CAUSEWAYBAY GO  //  Love2D\n\n"} \
 		/^[a-zA-Z0-9_-]+:.*##/ { printf "  make %-10s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-	@printf "\n  F1 portrait/landscape   F11 window/fullscreen\n"
-	@printf "  setup JSONL lives in ~/.causewaybaygo\n\n"
+	@printf "\n  F1 portrait/landscape   F11 window/fullscreen   F6 share\n"
+	@printf "  setup, progress, stats JSONL live in ~/.causewaybaygo\n"
+	@printf "  exports (md csv jsonl txt sqlite png) land in ~/Downloads\n\n"
 
 start: ## Run the game (background)
 	@if [ -f "$(PIDFILE)" ] && kill -0 $$(cat "$(PIDFILE)") 2>/dev/null; then \
@@ -64,14 +67,14 @@ status: ## Is the game running?
 	fi
 
 test: ## Run the Love2D test suite
-	@GOSET_TEST=1 GOSET_HOME="$(GAME_DIR)/.test-home" $(LOVE) "$(GAME_DIR)" --test; \
+	@GOSET_TEST=1 GOSET_HOME="$(GAME_DIR)/.test-home" GOSET_DOWNLOADS="$(GAME_DIR)/.test-home/downloads" $(LOVE) "$(GAME_DIR)" --test; \
 	status=$$?; \
 	rm -rf "$(GAME_DIR)/.test-home"; \
 	exit $$status
 
 drive: ## Replay a scripted session: make drive SCRIPT=tests/drive/all.lua
 	@test -n "$(SCRIPT)" || { echo "usage: make drive SCRIPT=path/to/script.lua"; exit 1; }
-	@GOSET_HOME="$(GAME_DIR)/.drive-home" GOSET_DRIVE="$(SCRIPT)" $(LOVE) "$(GAME_DIR)"; \
+	@GOSET_HOME="$(GAME_DIR)/.drive-home" GOSET_DOWNLOADS="$(GAME_DIR)/.drive-home/downloads" GOSET_DRIVE="$(SCRIPT)" $(LOVE) "$(GAME_DIR)"; \
 	status=$$?; \
 	rm -rf "$(GAME_DIR)/.drive-home"; \
 	echo "screenshots: ~/Library/Application Support/LOVE/goset-causewaybay"; \
@@ -79,7 +82,7 @@ drive: ## Replay a scripted session: make drive SCRIPT=tests/drive/all.lua
 
 lint: ## Check the street data without LÖVE (luajit)
 	@command -v luajit >/dev/null 2>&1 || { echo "luajit not found — brew install luajit"; exit 1; }
-	luajit tools/lint_data.lua $(RUST_DATA)
+	luajit tools/lint_data.lua $(CHIP_DATA)
 	@# a first-tier hint that spells its own answer defeats the two-tier HINT
 	luajit tools/hint_leaks.lua $(ALL_DATA)
 

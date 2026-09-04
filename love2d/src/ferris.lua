@@ -2,6 +2,8 @@
 -- mascot without a new sprite sheet. (x, y) is the middle of the feet,
 -- h the body height in pixels; t animates the claws and the bob.
 
+local assets = require "src.assets"
+
 local Ferris = {}
 
 local SHELL = { 0.93, 0.36, 0.12, 1 }
@@ -17,6 +19,11 @@ function Ferris.draw(x, y, h, t, opts)
   opts = opts or {}
   t = t or 0
   h = h or 40
+  -- the Grok sheet when it is there (assets/sprite_ferris.png); the
+  -- primitives below otherwise
+  if not opts.vector and assets.mascot("sprite_ferris", x, y, h, t, opts) then
+    return
+  end
   local s = h / 40 -- everything below is authored for a 40 px crab
   local bob = (opts.still and 0 or math.sin(t * 3) * 1.5) * s
   local wave = math.sin(t * 5) * 0.35

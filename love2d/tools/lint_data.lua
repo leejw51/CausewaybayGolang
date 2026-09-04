@@ -1,9 +1,12 @@
 -- Lint one street data file without LÖVE:
 --
---   luajit tools/lint_data.lua src/data_rs.lua [src/data_rs_adv.lua ...]
+--   luajit tools/lint_data.lua src/data_rs.lua [src/data_py.lua ...]
 --
 -- Checks the same rules tests/test_flow.lua enforces, plus the shape of the
--- Rust-track extras (viz = "rust", chips, note). Exit 1 on any error.
+-- chips scene the Rust and Python tracks and the BIG O quests use
+-- (viz = "rust" / "python" / "chips", chips, note). A Rust street's id must
+-- start rs_, a Python street's py_; a Go chips street has no prefix.
+-- Exit 1 on any error.
 
 package.path = "./?.lua;" .. package.path
 
@@ -17,7 +20,11 @@ local BG = {
   bg_till = true,
   bg_kitchen = true,
   bg_set = true,
+  bg_night = true,
+  bg_lab = true,
+  bg_market = true,
 }
+local VIZ_PREFIX = { rust = "rs_", python = "py_", chips = "" }
 local PORTRAIT = {
   portrait_hero = true,
   portrait_friends = true,
@@ -128,8 +135,13 @@ local function lintFile(path, seenIds)
   local blanks = 0
   for mi, m in ipairs(maps) do
     local where = string.format("%s map %d (%s)", path, mi, tostring(m.id))
-    if type(m.id) ~= "string" or not m.id:match("^rs_[%l_]+$") then
-      err(where, "id must be a lowercase rs_ string")
+    local prefix = VIZ_PREFIX[m.viz]
+    if type(m.id) ~= "string" or not m.id:match("^[%l_%d]+$") then
+      err(where, "id must be a lowercase string")
+    elseif prefix and m.id:sub(1, #prefix) ~= prefix then
+      err(where, "id must start with " .. prefix .. " for a " .. tostring(m.viz) .. " street")
+    elseif prefix == "" and (m.id:sub(1, 3) == "rs_" or m.id:sub(1, 3) == "py_") then
+      err(where, "a Go street must not carry a rs_ / py_ prefix")
     elseif seenIds[m.id] then
       err(where, "id " .. m.id .. " is used twice")
     else
@@ -165,8 +177,8 @@ local function lintFile(path, seenIds)
         checkL(where .. " npc " .. ni .. " line", n.line)
       end
     end
-    if m.viz ~= "rust" then
-      err(where, 'viz must be "rust"')
+    if not VIZ_PREFIX[m.viz] then
+      err(where, 'viz must be "rust", "python" or "chips"')
     end
     if type(m.chips) ~= "table" or #m.chips < 2 or #m.chips > 4 then
       err(where, "chips must list 2 to 4 { text, style } pairs")
