@@ -222,6 +222,10 @@ local S = {
   combo = { en = "COMBO x%d", ko = "콤보 x%d", yue = "連擊 x%d" },
   streak = { en = "STREAK x%d", ko = "연속 x%d", yue = "連續 x%d" },
   perfect = { en = "PERFECT!", ko = "퍼펙트!", yue = "完美！" },
+  -- the three CLEAR effects (src/fx.lua): a blank, a street, a quest
+  fx_step = { en = "NICE!", ko = "좋아!", yue = "好嘢！" },
+  fx_street = { en = "STREET CLEAR!", ko = "거리 클리어!", yue = "呢條街過咗！" },
+  fx_quest = { en = "QUEST CLEAR!", ko = "퀘스트 클리어!", yue = "任務完成！" },
   clear_prize = {
     en = "CLEAR   ENTER for the set",
     ko = "클리어   ENTER 세트 받기",
@@ -342,6 +346,16 @@ local S = {
     en = "WHAT CHEF BO LEARNED: the GIL, Process and the main guard, Pool and chunksize, Queue and Pipe, locks and Value, shared_memory, ProcessPoolExecutor.   PRIZE: the SCALED stamp.",
     ko = "보 셰프가 배운 것: GIL, Process와 main 가드, Pool과 chunksize, Queue와 Pipe, 락과 Value, shared_memory, ProcessPoolExecutor.   상품: SCALED 도장.",
     yue = "寶廚學識咗：GIL、Process 同 main guard、Pool 同 chunksize、Queue 同 Pipe、鎖同 Value、shared_memory、ProcessPoolExecutor。   獎品：SCALED 印。",
+  },
+  mwin_title = {
+    en = "MODULES  ·  the repo",
+    ko = "MODULES  ·  저장소",
+    yue = "MODULES  ·  個 repo",
+  },
+  mwin_head = {
+    en = "WHAT ALEX LEARNED: the module path is the import path, a folder is a package, go get and go.sum, internal and cmd, replace and go.work, semver tags and /v2, the proxy and GOPRIVATE.   PRIZE: the v1.0.0 tag.",
+    ko = "알렉스가 배운 것: 모듈 경로가 곧 import 경로, 폴더가 곧 패키지, go get과 go.sum, internal과 cmd, replace와 go.work, semver 태그와 /v2, 프록시와 GOPRIVATE.   상품: v1.0.0 태그.",
+    yue = "阿力學識咗：module path 就係 import path、一個資料夾就係一個 package、go get 同 go.sum、internal 同 cmd、replace 同 go.work、semver tag 同 /v2、proxy 同 GOPRIVATE。   獎品：v1.0.0 tag。",
   },
   -- SHARE: copy and export
   share = { en = "SHARE", ko = "공유", yue = "分享" },

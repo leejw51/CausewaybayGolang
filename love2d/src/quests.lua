@@ -22,6 +22,7 @@
 --   PYTHON 17 py_callback          the same seven, in Python
 --   GO     18 conc      THREADS    the lunch rush: mutex, atomics, pools, channels, context, async
 --   PYTHON 19 py_mp     PARALLEL   the night batch: the GIL, Process, Pool, Queue, shared memory
+--   GO     20 modules   MODULES    packages and paths: go.mod, GitHub imports, internal, replace, semver, proxy
 
 local function L(en, ko, yue)
   return { en = en, ko = ko, yue = yue }
@@ -293,6 +294,20 @@ local Quests = {
     ),
     maps = require "src.data_py_mp",
     win = { stamp = "SCALED", bg = "bg_night", title = "mpwin_title", head = "mpwin_head" },
+  },
+  {
+    id = "modules",
+    track = "go",
+    tag = "Q8",
+    station = "MODULES",
+    name = L("MODULES  -  the repo", "MODULES  -  저장소", "MODULES  -  個 repo"),
+    goal = L(
+      "Split the app into packages and let the Times Square shop import it from GitHub. Paths, go.mod, go get, tags. Ship v1.0.0.",
+      "앱을 패키지로 나누고 타임스퀘어 매장이 GitHub에서 import하게 하라. 경로, go.mod, go get, 태그. v1.0.0을 내라.",
+      "將個 App 拆做 package，等時代廣場間舖可以由 GitHub import。path、go.mod、go get、tag。出 v1.0.0。"
+    ),
+    maps = require "src.data_mod",
+    win = { stamp = "v1.0.0", bg = "bg_lab", title = "mwin_title", head = "mwin_head" },
   },
 }
 

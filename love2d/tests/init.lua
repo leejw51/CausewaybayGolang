@@ -7,6 +7,8 @@ local SUITES = {
   "tests.test_persist",
   "tests.test_flow",
   "tests.test_conc",
+  "tests.test_fx",
+  "tests.test_mod",
 }
 
 local M = {}
