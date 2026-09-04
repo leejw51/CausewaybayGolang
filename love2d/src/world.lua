@@ -19,6 +19,9 @@ local VIEW = {
   bg_till = 0.50,
   bg_kitchen = 0.50,
   bg_set = 0.50,
+  bg_night = 0.50,
+  bg_lab = 0.52,
+  bg_market = 0.50,
 }
 
 local GROUND = {
@@ -33,6 +36,9 @@ local GROUND = {
   bg_till = 0.88,
   bg_kitchen = 0.86,
   bg_set = 0.88,
+  bg_night = 0.86,
+  bg_lab = 0.90,
+  bg_market = 0.88,
 }
 
 local function clip(dx, dy, dw, dh)

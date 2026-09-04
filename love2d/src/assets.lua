@@ -10,6 +10,9 @@ local SPRITE = {
   ui_coin = true,
   ui_panel = true,
   stamp_served = true,
+  sprite_monty = true,
+  sprite_ferris = true,
+  sprite_gogo = true,
 }
 
 local CHAR = {
@@ -26,6 +29,9 @@ local SIZE = {
   ui_coin = { 48, 48 },
   ui_panel = { 128, 96 },
   stamp_served = { 96, 96 },
+  sprite_monty = { 128, 128 },
+  sprite_ferris = { 128, 128 },
+  sprite_gogo = { 128, 128 },
 }
 
 local function knockout(data)
@@ -38,8 +44,8 @@ local function knockout(data)
     if a < 0.12 then
       return true
     end
-    -- magenta screen
-    if r > 0.55 and b > 0.55 and g < 0.45 then
+    -- magenta screen (Grok's "solid magenta" comes back as hot pink too)
+    if r > 0.55 and b > 0.30 and g < 0.45 and b < r + 0.2 then
       return true
     end
     -- leftover lime
@@ -285,6 +291,51 @@ function Assets.ensureFonts(scale)
   Assets.font.help = tryFont(32 * s, BODY)
 end
 
+-- A font at any size, for the PNG export (src/share.lua), which lays its
+-- page out in absolute pixels rather than the UI scale. kind: "pixel" (Press
+-- Start 2P) or "body" (VT323). Cached; the CJK fallback comes along.
+local anyFonts = {}
+function Assets.fontAt(size, kind)
+  size = math.max(6, math.floor(size + 0.5))
+  local key = (kind or "body") .. size
+  if anyFonts[key] then
+    return anyFonts[key]
+  end
+  local f = tryFont(size, kind == "pixel" and PIXEL or BODY)
+  anyFonts[key] = f
+  return f
+end
+
+-- Draw a knocked-out mascot sheet (sprite_ferris, sprite_monty, sprite_gogo)
+-- with its feet at (x, y) and a height of h pixels. Returns false when the
+-- sheet is missing so the caller can fall back to primitives.
+function Assets.mascot(name, x, y, h, t, opts)
+  local img = Assets.img[name]
+  if not img then
+    return false
+  end
+  opts = opts or {}
+  t = t or 0
+  local box = Assets.box[name]
+  local ih = box and box.h or img:getHeight()
+  local sc = h / math.max(1, ih)
+  local bob = opts.still and 0 or math.sin(t * 2.6) * 1.5
+  local hop = opts.walk and math.abs(math.sin(t * 9)) * 2.5 or 0
+  love.graphics.setColor(1, 1, 1, opts.alpha or 1)
+  love.graphics.draw(
+    img,
+    x,
+    y - bob - hop,
+    opts.walk and math.sin(t * 9) * 0.04 or 0,
+    (opts.facing or 1) * sc,
+    sc,
+    box and box.cx or img:getWidth() * 0.5,
+    box and box.feet or img:getHeight()
+  )
+  love.graphics.setColor(1, 1, 1, 1)
+  return true
+end
+
 function Assets.load()
   love.graphics.setDefaultFilter("nearest", "nearest")
   local names = {
@@ -299,6 +350,9 @@ function Assets.load()
     "bg_till",
     "bg_kitchen",
     "bg_set",
+    "bg_night",
+    "bg_lab",
+    "bg_market",
     "map_bg",
     "map_bg_p",
     "sprite_hero",
@@ -310,6 +364,9 @@ function Assets.load()
     "ui_coin",
     "ui_panel",
     "stamp_served",
+    "sprite_monty",
+    "sprite_ferris",
+    "sprite_gogo",
   }
   for i = 1, #names do
     local name = names[i]

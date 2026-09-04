@@ -156,11 +156,21 @@ return function(t)
       "src.data_rs_adv",
       "src.data_rs_pro",
       "src.data_rs_quiz",
+      "src.data_rs_bigo",
+      "src.data_py",
+      "src.data_py_adv",
+      "src.data_py_quiz",
+      "src.data_py_bigo",
+      "src.data_bigo",
+      "src.data_callback",
+      "src.data_rs_callback",
+      "src.data_py_callback",
+      "src.quests",
     }) do
       walk(require(m), {})
     end
     walk(I18n.STRINGS, {})
-    t.ok(#strings > 1400, "found the strings (" .. #strings .. ")")
+    t.ok(#strings > 2400, "found the strings (" .. #strings .. ")")
     for _, lang in ipairs({ "zh", "ja", "es", "cs" }) do
       local tr = I18n.TR[lang]
       t.ok(tr ~= nil, lang .. " has src/lang/" .. lang .. ".lua")
@@ -368,29 +378,72 @@ return function(t)
     t.eq(g.state, "title")
   end)
 
-  t.it("two tracks of four quests; Rust streets carry the rs_ prefix and a scene", function()
-    t.eq(#Quests, 8, "eight quests")
-    t.eq(#Quests.TRACKS, 2)
-    t.eq(#Quests.ofTrack("go"), 4)
-    t.eq(#Quests.ofTrack("rust"), 4)
-    t.eq(Quests.firstOf("rust"), 5)
-    t.eq(Quests.indexInTrack(7), 3, "R3 is the third quest of its track")
-    for q, quest in ipairs(Quests) do
-      t.eq(quest.track, q <= 4 and "go" or "rust", quest.id .. " track")
-      for _, m in ipairs(quest.maps) do
-        if quest.track == "rust" then
-          t.ok(m.id:sub(1, 3) == "rs_", m.id .. " is a Rust street")
-          t.eq(m.viz, "rust", m.id .. " uses the Rust scene")
-          t.ok(type(m.chips) == "table" and #m.chips >= 2, m.id .. " has chips")
-          t.ok(type(m.note) == "string" and #m.note > 0, m.id .. " has a note")
-        else
-          t.ok(m.id:sub(1, 3) ~= "rs_", m.id .. " is a Go street")
+  t.it(
+    "three tracks; Rust and Python streets carry their prefix and a chips scene; every track has BIG O and CALLBACK",
+    function()
+      t.eq(#Quests, 17, "seventeen quests")
+      t.eq(#Quests.TRACKS, 3)
+      t.eq(#Quests.ofTrack("go"), 6)
+      t.eq(#Quests.ofTrack("rust"), 6)
+      t.eq(#Quests.ofTrack("python"), 5)
+      t.eq(Quests.firstOf("rust"), 5)
+      t.eq(Quests.firstOf("python"), 9)
+      t.eq(Quests.indexInTrack(7), 3, "R3 is the third quest of its track")
+      t.eq(Quests.indexInTrack(12), 5, "the Go BIG O quest is Q5 even though it is appended")
+      t.eq(Quests.indexInTrack(14), 4, "the Python BIG O quest is P4")
+      t.eq(Quests.indexInTrack(15), 6, "the Go CALLBACK quest is Q6")
+      t.eq(Quests.indexInTrack(17), 5, "the Python CALLBACK quest is P5")
+      -- old saves keep their meaning: the first eight indices are untouched
+      t.eq(Quests[1].id, "basic")
+      t.eq(Quests[5].id, "rs_basic")
+      t.eq(Quests[8].id, "rs_rush")
+      for _, track in ipairs({ "go", "rust", "python" }) do
+        local found = false
+        for _, q in ipairs(Quests.ofTrack(track)) do
+          if Quests[q].station == "BIG O" then
+            found = true
+            t.eq(#Quests[q].maps, 7, track .. " BIG O has seven streets")
+            t.eq(Quests[q].win.stamp, "O(1)")
+          end
+        end
+        t.ok(found, track .. " has a BIG O quest")
+        local callback = false
+        for _, q in ipairs(Quests.ofTrack(track)) do
+          if Quests[q].station == "CALLBACK" then
+            callback = true
+            t.eq(#Quests[q].maps, 7, track .. " CALLBACK has seven streets")
+            t.eq(Quests[q].win.stamp, "OFFER")
+            local stations = {}
+            for _, m in ipairs(Quests[q].maps) do
+              stations[#stations + 1] = m.station
+            end
+            t.eq(table.concat(stations, " "), "STACK DP WINDOW HEAP INTERVAL LRU GRID", track .. " CALLBACK streets")
+          end
+        end
+        t.ok(callback, track .. " has a CALLBACK quest")
+      end
+      for _, quest in ipairs(Quests) do
+        for _, m in ipairs(quest.maps) do
+          if quest.track == "rust" then
+            t.ok(m.id:sub(1, 3) == "rs_", m.id .. " is a Rust street")
+            t.eq(m.viz, "rust", m.id .. " uses the Rust scene")
+          elseif quest.track == "python" then
+            t.ok(m.id:sub(1, 3) == "py_", m.id .. " is a Python street")
+            t.eq(m.viz, "python", m.id .. " uses the Python scene")
+          else
+            t.ok(m.id:sub(1, 3) ~= "rs_" and m.id:sub(1, 3) ~= "py_", m.id .. " is a Go street")
+          end
+          if m.viz == "rust" or m.viz == "python" or m.viz == "chips" then
+            t.ok(type(m.chips) == "table" and #m.chips >= 2, m.id .. " has chips")
+            t.ok(type(m.note) == "string" and #m.note > 0, m.id .. " has a note")
+          end
         end
       end
+      t.eq(#Quests.allMaps(), 17 * 7, "every street, flat")
     end
-  end)
+  )
 
-  t.it("TAB switches Go / Rust on the title and the map; Q stays inside the track", function()
+  t.it("TAB cycles Go / Rust / Python on the title and the map; Q stays inside the track", function()
     local g = fresh()
     t.eq(g:track(), "go")
     press(g, "tab")
@@ -403,8 +456,17 @@ return function(t)
     press(g, "q")
     press(g, "q")
     press(g, "q")
+    t.eq(g.quest, 13, "the fifth Rust quest is BIG O, appended at the end of the flat list")
+    press(g, "q")
+    t.eq(g.quest, 16, "the sixth Rust quest is CALLBACK, appended after the BIG O trio")
+    t.eq(g:map().id, "rs_stack", "the Rust callback starts on the stack")
+    press(g, "q")
     t.eq(g.quest, 5, "Q wraps inside the Rust track")
     press(g, "q")
+    press(g, "tab")
+    t.eq(g:track(), "python")
+    t.eq(g.quest, 9)
+    t.eq(g:map().id, "py_print", "the Python night shift starts on print")
     press(g, "tab")
     t.eq(g:track(), "go")
     t.eq(g.quest, 1, "back to the Go quest that was open")
@@ -413,8 +475,10 @@ return function(t)
     press(g, "return")
     t.eq(g.state, "map")
     press(g, "tab")
-    t.eq(g:track(), "go")
+    t.eq(g:track(), "python")
     t.eq(g.state, "map", "TAB on the map stays on the map")
+    press(g, "tab")
+    t.eq(g:track(), "go", "the third TAB wraps around")
     press(g, "tab")
     press(g, "3")
     t.eq(g.state, "play")
@@ -447,7 +511,7 @@ return function(t)
     t.eq(g2.stage, 2)
     local n, total = g2:trackCleared("rust")
     t.eq(n, 0)
-    t.eq(total, 28, "four Rust quests of seven streets")
+    t.eq(total, 42, "six Rust quests of seven streets")
   end)
 
   t.it("clearing a Rust street marks it CLEARED on its own track only", function()
@@ -524,6 +588,12 @@ return function(t)
     t.eq(g.quest, 4)
     t.eq(g:map().id, "recurse", "quest 4 starts on recursion")
     press(g, "q")
+    t.eq(g.quest, 12)
+    t.eq(g:map().id, "bigo_one", "quest 5 starts on O(1)")
+    press(g, "q")
+    t.eq(g.quest, 15)
+    t.eq(g:map().id, "stack", "quest 6 starts on the stack")
+    press(g, "q")
     t.eq(g.quest, 1, "Q wraps around")
     press(g, "q")
     t.eq(g.quest, 2)
@@ -561,7 +631,13 @@ return function(t)
     type_(g, stages[2].answer)
     press(g, "return")
     t.eq(g.streak, 2, "two in a row")
-    t.ok(#g.pops >= 1 and g.pops[#g.pops].kind == "combo", "COMBO pops")
+    local combo = false
+    for _, p in ipairs(g.pops) do
+      if p.kind == "combo" then
+        combo = true
+      end
+    end
+    t.ok(combo, "COMBO pops")
     type_(g, "nope")
     press(g, "return")
     t.eq(g.streak, 0, "a miss resets the streak")
@@ -587,7 +663,13 @@ return function(t)
       press(g, "return")
     end
     t.eq(g.perfect, true, "street 3 solved clean is PERFECT")
-    t.eq(g.pops[#g.pops].kind, "perfect")
+    local perfectPop = false
+    for _, p in ipairs(g.pops) do
+      if p.kind == "perfect" then
+        perfectPop = true
+      end
+    end
+    t.ok(perfectPop, "PERFECT pops")
   end)
 
   t.it("each quest has its own stamp; clearing one leaves the other untouched", function()
@@ -855,5 +937,300 @@ return function(t)
     press(g2, "c")
     t.eq(g2.state, "play")
     t.eq(g2.step, 2)
+  end)
+
+  -- ---------------------------------------------------------------- share
+
+  local Share = require "src.share"
+  local Stats = require "src.stats"
+  local downloads = scratch .. "/downloads"
+
+  local function freshShare()
+    local g = fresh()
+    Stats.reset()
+    os.execute(string.format('rm -rf "%s"', downloads))
+    Share.use(downloads)
+    return g
+  end
+
+  local function readFile(path)
+    local f = io.open(path, "rb")
+    if not f then
+      return nil
+    end
+    local body = f:read("*a")
+    f:close()
+    return body
+  end
+
+  t.it("COPY builds the question, the hint, the answer or all of it, with a line to ask an AI", function()
+    local g = freshShare()
+    press(g, "3")
+    local st = g:currentStage()
+    local q = Share.text(g, "q")
+    t.has(q, st.q.en, "question text")
+    t.has(q, "___", "the code with its blank")
+    t.ok(not q:find(st.answer, 1, true) or st.answer:len() < 3, "the question does not give the answer away")
+    local h = Share.text(g, "hint")
+    t.has(h, st.hint.en)
+    local a = Share.text(g, "answer")
+    t.has(a, "ANSWER: " .. st.answer)
+    t.has(a, st.ok.en, "why")
+    local all = Share.text(g, "all")
+    t.has(all, st.q.en)
+    t.has(all, st.hint.en)
+    t.has(all, st.answer)
+    t.has(all, "Ask your AI", "the prompt for an AI")
+    local ok = Share.copy(g, "all")
+    t.ok(ok == true or ok == false, "copy returns a boolean whatever the clipboard does")
+    local recs = require("src.persist").records(require("src.persist").EXPORTS)
+    t.eq(recs[#recs].event, "copy")
+    t.eq(recs[#recs].part, "all")
+  end)
+
+  t.it("rows cover the street, the quest or the whole track", function()
+    local g = freshShare()
+    press(g, "2")
+    local street = Share.rows(g, "street")
+    t.eq(#street, #maps[2].stages, "one row per blank of the street")
+    t.eq(street[1].station, maps[2].station)
+    t.eq(street[1].answer, maps[2].stages[1].answer)
+    local quest = Share.rows(g, "quest")
+    local n = 0
+    for _, m in ipairs(maps) do
+      n = n + #m.stages
+    end
+    t.eq(#quest, n, "every blank of the quest")
+    local track = Share.rows(g, "track")
+    local all = 0
+    for _, q in ipairs(Quests.ofTrack("go")) do
+      for _, m in ipairs(Quests[q].maps) do
+        all = all + #m.stages
+      end
+    end
+    t.eq(#track, all, "every blank of the Go track")
+    t.ok(#track > #quest, "the track holds more than one quest")
+  end)
+
+  t.it("EXPORT writes markdown, csv, jsonl and txt into GOSET_DOWNLOADS", function()
+    local g = freshShare()
+    press(g, "2")
+    local st = maps[2].stages[1]
+    for _, fmt in ipairs({ "md", "csv", "jsonl", "txt" }) do
+      local path, err = Share.export(g, fmt, "street")
+      t.ok(path, fmt .. " exported: " .. tostring(err))
+      t.has(path, downloads, fmt .. " lands in the downloads dir")
+      t.has(path, "." .. fmt, fmt .. " extension")
+      local body = readFile(path)
+      t.ok(body and #body > 0, fmt .. " has content")
+      t.has(body, st.answer, fmt .. " carries the answer")
+      t.has(body, "___", fmt .. " carries the code with its blank")
+    end
+    local md = readFile(Share.export(g, "md", "street"))
+    t.has(md, "```go", "markdown fences the code in the track's language")
+    t.has(md, "**Answer:**")
+    local csv = readFile(Share.export(g, "csv", "street"))
+    local first = csv:match("^(.-)\n")
+    t.has(first, "track,quest,step,station", "csv header")
+    local jsonl = readFile(Share.export(g, "jsonl", "street"))
+    local lines = 0
+    for line in jsonl:gmatch("[^\n]+") do
+      lines = lines + 1
+      local rec = require("src.json").decode(line)
+      t.eq(type(rec), "table", "each jsonl line decodes")
+      t.eq(rec.track, "go")
+    end
+    t.eq(lines, #maps[2].stages, "one jsonl line per blank")
+    local recs = require("src.persist").records(require("src.persist").EXPORTS)
+    t.eq(recs[#recs].event, "export")
+    t.eq(recs[#recs].fmt, "jsonl")
+    t.eq(recs[#recs].ok, true)
+  end)
+
+  t.it("EXPORT sqlite writes a database when sqlite3 is there, the .sql script otherwise", function()
+    local g = freshShare()
+    press(g, "1")
+    local path, err = Share.export(g, "sqlite", "street")
+    t.ok(path, "sqlite exported: " .. tostring(err))
+    if Share.haveSqlite() then
+      t.has(path, ".sqlite")
+      local body = readFile(path)
+      t.ok(body and body:sub(1, 15) == "SQLite format 3", "a real SQLite file")
+    else
+      t.has(path, ".sql")
+      t.has(readFile(path), "CREATE TABLE")
+    end
+    local sql = Share.sql(Share.rows(g, "street"), "t")
+    t.has(sql, "INSERT INTO quiz")
+    t.has(sql, "COMMIT;")
+    t.ok(not sql:find("O'Reilly", 1, true) or sql:find("O''Reilly", 1, true), "quotes are doubled")
+  end)
+
+  t.it("the PNG disk is square, 512 to 2048 px, and grows with the scope", function()
+    local g = freshShare()
+    press(g, "1")
+    local rows = Share.rows(g, "street")
+    local size, pt = Share.fit(rows, "t")
+    t.ok(size >= 512 and size <= 2048, "size in range: " .. size)
+    t.eq(size % 1, 0)
+    local sizeQuest = Share.fit(Share.rows(g, "quest"), "t")
+    t.ok(sizeQuest >= size, "a quest needs at least as much room as a street")
+    local sizeTrack, ptTrack = Share.fit(Share.rows(g, "track"), "t")
+    t.eq(sizeTrack, 2048, "a whole track hits the ceiling")
+    t.ok(ptTrack < pt, "and the type shrinks to fit: " .. ptTrack .. " < " .. pt)
+    local data, S = Share.png(rows, "t", g)
+    t.ok(data, "rendered: " .. tostring(S))
+    t.eq(data:getWidth(), data:getHeight(), "square")
+    t.eq(data:getWidth(), size)
+    data:release()
+    local path, err = Share.export(g, "png", "street")
+    t.ok(path, "png exported: " .. tostring(err))
+    local body = readFile(path)
+    t.ok(body and body:sub(2, 4) == "PNG", "a real PNG file")
+  end)
+
+  t.it("EXPORT all writes every format", function()
+    local g = freshShare()
+    press(g, "1")
+    local paths, err = Share.exportAll(g, "street")
+    t.eq(#paths, #Share.FORMATS, "one file per format: " .. tostring(err))
+  end)
+
+  -- ---------------------------------------------------------------- stats
+
+  t.it("XP grows with right answers, combos and FAST; a level is crossed; every attempt is logged", function()
+    local g = freshShare()
+    press(g, "1")
+    local stages = maps[1].stages
+    t.eq(Stats.s.xp, 0)
+    t.eq(Stats.s.level, 1)
+    type_(g, "nope")
+    press(g, "return")
+    t.eq(Stats.s.wrong, 1)
+    t.eq(Stats.s.xp, 0, "a miss earns nothing")
+    for _ = 1, 4 do
+      press(g, "backspace")
+    end
+    type_(g, stages[1].answer)
+    press(g, "return")
+    t.eq(Stats.s.right, 1)
+    t.ok(Stats.s.xp >= Stats.XP.right, "a right answer pays")
+    t.eq(Stats.s.fast, 1, "answered within the FAST window")
+    local after1 = Stats.s.xp
+    type_(g, stages[2].answer)
+    press(g, "return")
+    t.ok(Stats.s.xp - after1 > Stats.XP.right, "the second in a row pays the combo bonus")
+    local recs = require("src.persist").records(require("src.persist").ANSWERS)
+    t.eq(#recs, 3, "three attempts logged")
+    t.eq(recs[1].ok, false)
+    t.eq(recs[2].ok, true)
+    t.eq(recs[2].street, "flat")
+    t.ok(type(recs[2].secs) == "number")
+    -- clear the street: CLEAR xp, PERFECT is out (there was a miss), FIRST CLEAR badge
+    for i = 3, #stages do
+      type_(g, stages[i].answer)
+      press(g, "return")
+    end
+    t.eq(g.solved, true)
+    t.eq(Stats.s.clears, 1)
+    t.ok(Stats.has("first_clear"), "FIRST CLEAR badge")
+    t.eq(Stats.has("perfect"), false)
+    t.ok(Stats.s.xp >= Stats.xpFor(2), "enough for level 2: " .. Stats.s.xp)
+    t.eq(Stats.s.level, Stats.levelFor(Stats.s.xp))
+    t.ok(Stats.s.level >= 2, "levelled up")
+    local rec = require("src.persist").loadStats()
+    t.eq(rec.xp, Stats.s.xp, "stats.jsonl holds the total")
+    local saved = false
+    for _, id in ipairs(rec.badges) do
+      if id == "first_clear" then
+        saved = true
+      end
+    end
+    t.ok(saved, "stats.jsonl lists the badge")
+    -- a fresh process reads it back
+    Stats.reset()
+    t.eq(Stats.s.xp, 0)
+    Stats.load()
+    t.eq(Stats.s.xp, rec.xp)
+    t.ok(Stats.has("first_clear"))
+  end)
+
+  t.it("levels are triangular and the bar reports progress inside the level", function()
+    t.eq(Stats.xpFor(1), 0)
+    t.eq(Stats.xpFor(2), 100)
+    t.eq(Stats.xpFor(3), 300)
+    t.eq(Stats.xpFor(4), 600)
+    t.eq(Stats.levelFor(0), 1)
+    t.eq(Stats.levelFor(99), 1)
+    t.eq(Stats.levelFor(100), 2)
+    t.eq(Stats.levelFor(650), 4)
+    Stats.reset()
+    Stats.s.xp = 150
+    Stats.s.level = 2
+    local into, size = Stats.progress()
+    t.eq(into, 50)
+    t.eq(size, 200)
+  end)
+
+  t.it("a perfect street, a stamp and a BIG O stamp award badges; three tracks award TRIO and POLYGLOT", function()
+    local g = freshShare()
+    press(g, "3")
+    solveStreet(g)
+    t.ok(Stats.has("perfect"), "PERFECT STREET")
+    t.eq(Stats.s.perfects, 1)
+    -- the same round in every language: RECURSE in Go, Rust and Python
+    g.cleared = { recurse = true, rs_recurse = true, py_recurse = true }
+    local r = Stats.onClear(g, false)
+    t.ok(Stats.has("trio"), "a street in each of three tracks")
+    t.ok(Stats.has("polyglot"), "the same station in three tracks")
+    t.ok(#r.badges >= 1, "the badges come back to the game for the pop")
+    -- a stamp on the Go BIG O quest
+    g:setQuest(12)
+    Stats.onStamp(g)
+    t.ok(Stats.has("stamp"), "FIRST STAMP")
+    t.ok(Stats.has("bigo"), "BIG O MASTER")
+    t.eq(Stats.s.stamps, 1)
+    Stats.onShare("copy")
+    t.ok(Stats.has("share"))
+    t.eq(Stats.s.copies, 1)
+    t.eq(Stats.award("share"), false, "a badge is awarded once")
+    t.eq(Stats.award("nope"), false, "unknown badges are refused")
+    for _, b in ipairs(Stats.BADGES) do
+      t.ok(#require("src.i18n").t(b.name) > 0 and require("src.i18n").t(b.name) ~= b.name, b.id .. " has a name")
+    end
+  end)
+
+  -- ---------------------------------------------------------------- sheet
+
+  t.it("F6 opens the SHARE sheet, digits act, typing is blocked, ESC closes", function()
+    local g = freshShare()
+    press(g, "3")
+    t.eq(g.sheet, nil)
+    press(g, "f6")
+    t.ok(g.sheet, "sheet open")
+    type_(g, "abc")
+    t.eq(g.input, "", "keys do not reach the blank while the sheet is open")
+    press(g, "s")
+    t.eq(g.shareScope, "quest", "S cycles the scope")
+    press(g, "s")
+    t.eq(g.shareScope, "track")
+    press(g, "s")
+    t.eq(g.shareScope, "street")
+    press(g, "4")
+    t.ok(g.toast and #g.toast > 0, "COPY ALL leaves a toast: " .. tostring(g.toast))
+    t.ok(g.sheet, "the sheet stays open after an action")
+    press(g, "8")
+    t.has(g.toast, "SAVED", "EXPORT TXT saved: " .. tostring(g.toast))
+    press(g, "escape")
+    t.eq(g.sheet, nil, "ESC closes the sheet")
+    t.eq(g.state, "play", "and stays on the street")
+    press(g, "f6")
+    press(g, "f6")
+    t.eq(g.sheet, nil, "F6 toggles")
+    g:openSheet()
+    t.ok(g.sheet)
+    press(g, "escape")
+    press(g, "escape")
+    t.eq(g.state, "map", "a second ESC leaves for the map as before")
   end)
 end

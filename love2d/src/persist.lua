@@ -11,9 +11,17 @@ local Json = require "src.json"
 local Persist = {
   SETUP = "setup.jsonl",
   PROGRESS = "progress.jsonl",
+  STATS = "stats.jsonl", -- event=stats: XP, level, counters, badges (last line wins)
+  ANSWERS = "answers.jsonl", -- event=answer: every attempt, right or wrong, with its time
+  EXPORTS = "exports.jsonl", -- event=copy / export: what left the game, and where to
 }
 
 local LOG_MAX, LOG_KEEP = 200, 40
+-- the attempt log is the interesting one to keep: a long history, trimmed rarely
+local LIMITS = {
+  [Persist.ANSWERS] = { 5000, 4000 },
+  [Persist.EXPORTS] = { 1000, 800 },
+}
 
 local function now()
   return os.date("!%Y-%m-%dT%H:%M:%SZ")
@@ -21,11 +29,15 @@ end
 
 local function trim(name)
   local lines = Store.lines(name)
-  if #lines <= LOG_MAX then
+  local max, keepN = LOG_MAX, LOG_KEEP
+  if LIMITS[name] then
+    max, keepN = LIMITS[name][1], LIMITS[name][2]
+  end
+  if #lines <= max then
     return
   end
   local keep = {}
-  for i = #lines - LOG_KEEP + 1, #lines do
+  for i = #lines - keepN + 1, #lines do
     keep[#keep + 1] = lines[i]
   end
   Store.write(name, table.concat(keep, "\n") .. "\n")
@@ -147,6 +159,34 @@ end
 
 function Persist.boot()
   append(Persist.SETUP, { event = "boot", home = Store.root() })
+end
+
+-- One line into any of the logs above; `at` is filled in.
+function Persist.log(name, rec)
+  return append(name, rec)
+end
+
+-- Every record of a log, oldest first (the attempt history, for the stats).
+function Persist.records(name, pred)
+  local out = {}
+  for _, line in ipairs(Store.lines(name)) do
+    local rec = Json.decode(line)
+    if type(rec) == "table" and (not pred or pred(rec)) then
+      out[#out + 1] = rec
+    end
+  end
+  return out
+end
+
+function Persist.saveStats(rec)
+  rec.event = "stats"
+  return append(Persist.STATS, rec)
+end
+
+function Persist.loadStats()
+  return last(Persist.STATS, function(r)
+    return r.event == "stats"
+  end)
 end
 
 return Persist
