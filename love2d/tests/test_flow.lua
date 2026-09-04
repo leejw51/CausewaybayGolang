@@ -165,6 +165,8 @@ return function(t)
       "src.data_callback",
       "src.data_rs_callback",
       "src.data_py_callback",
+      "src.data_conc",
+      "src.data_py_mp",
       "src.quests",
     }) do
       walk(require(m), {})
@@ -381,11 +383,11 @@ return function(t)
   t.it(
     "three tracks; Rust and Python streets carry their prefix and a chips scene; every track has BIG O and CALLBACK",
     function()
-      t.eq(#Quests, 17, "seventeen quests")
+      t.eq(#Quests, 19, "nineteen quests")
       t.eq(#Quests.TRACKS, 3)
-      t.eq(#Quests.ofTrack("go"), 6)
+      t.eq(#Quests.ofTrack("go"), 7)
       t.eq(#Quests.ofTrack("rust"), 6)
-      t.eq(#Quests.ofTrack("python"), 5)
+      t.eq(#Quests.ofTrack("python"), 6)
       t.eq(Quests.firstOf("rust"), 5)
       t.eq(Quests.firstOf("python"), 9)
       t.eq(Quests.indexInTrack(7), 3, "R3 is the third quest of its track")
@@ -393,6 +395,8 @@ return function(t)
       t.eq(Quests.indexInTrack(14), 4, "the Python BIG O quest is P4")
       t.eq(Quests.indexInTrack(15), 6, "the Go CALLBACK quest is Q6")
       t.eq(Quests.indexInTrack(17), 5, "the Python CALLBACK quest is P5")
+      t.eq(Quests.indexInTrack(18), 7, "the Go THREADS quest is Q7")
+      t.eq(Quests.indexInTrack(19), 6, "the Python PARALLEL quest is P6")
       -- old saves keep their meaning: the first eight indices are untouched
       t.eq(Quests[1].id, "basic")
       t.eq(Quests[5].id, "rs_basic")
@@ -439,7 +443,7 @@ return function(t)
           end
         end
       end
-      t.eq(#Quests.allMaps(), 17 * 7, "every street, flat")
+      t.eq(#Quests.allMaps(), 19 * 7, "every street, flat")
     end
   )
 
@@ -593,6 +597,9 @@ return function(t)
     press(g, "q")
     t.eq(g.quest, 15)
     t.eq(g:map().id, "stack", "quest 6 starts on the stack")
+    press(g, "q")
+    t.eq(g.quest, 18)
+    t.eq(g:map().id, "mutex", "quest 7 starts on the mutex")
     press(g, "q")
     t.eq(g.quest, 1, "Q wraps around")
     press(g, "q")

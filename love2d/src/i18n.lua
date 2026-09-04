@@ -323,6 +323,26 @@ local S = {
     ko = "보 셰프가 보여준 것: 리스트 스택, DP, 윈도우, heapq, 구간, OrderedDict LRU, 그리드 DFS.   상품: 오퍼.",
     yue = "寶廚示範咗：list stack、DP、window、heapq、區間、OrderedDict LRU、grid DFS。   獎品：OFFER。",
   },
+  twin_title = {
+    en = "THREADS  ·  the lunch rush",
+    ko = "THREADS  ·  점심 러시",
+    yue = "THREADS  ·  午市",
+  },
+  twin_head = {
+    en = "WHAT ALEX LEARNED: Mutex and atomics, shared references, worker pools, pipelines, context, and that go plus a channel is await.   PRIZE: the SYNCED stamp.",
+    ko = "알렉스가 배운 것: 뮤텍스와 원자 연산, 공유 참조, 워커 풀, 파이프라인, context, 그리고 go에 채널을 더하면 그것이 await라는 것.   상품: SYNCED 도장.",
+    yue = "阿力學識咗：Mutex 同 atomic、共享 reference、worker pool、pipeline、context，仲有 go 加一條 channel 就係 await。   獎品：SYNCED 印。",
+  },
+  mpwin_title = {
+    en = "PARALLEL  ·  the night batch",
+    ko = "PARALLEL  ·  야간 배치",
+    yue = "PARALLEL  ·  夜更批次",
+  },
+  mpwin_head = {
+    en = "WHAT CHEF BO LEARNED: the GIL, Process and the main guard, Pool and chunksize, Queue and Pipe, locks and Value, shared_memory, ProcessPoolExecutor.   PRIZE: the SCALED stamp.",
+    ko = "보 셰프가 배운 것: GIL, Process와 main 가드, Pool과 chunksize, Queue와 Pipe, 락과 Value, shared_memory, ProcessPoolExecutor.   상품: SCALED 도장.",
+    yue = "寶廚學識咗：GIL、Process 同 main guard、Pool 同 chunksize、Queue 同 Pipe、鎖同 Value、shared_memory、ProcessPoolExecutor。   獎品：SCALED 印。",
+  },
   -- SHARE: copy and export
   share = { en = "SHARE", ko = "공유", yue = "分享" },
   share_title = { en = "SHARE THIS QUIZ", ko = "이 퀴즈 공유하기", yue = "分享呢個 quiz" },
