@@ -109,6 +109,7 @@ function Persist.saveProgress(game)
     event = "progress",
     state = game.state,
     quest = game.quest or 1,
+    track = type(game.track) == "function" and game:track() or game.track,
     step = game.step,
     stage = type(game.progressStage) == "function" and game:progressStage() or game.stage,
     solved = game.solved and true or false,

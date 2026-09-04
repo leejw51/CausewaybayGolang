@@ -1,16 +1,18 @@
 # CAUSEWAYBAY GO — Love2D
 # Default: make help
 
-APP     := $(CURDIR)
+GAME_DIR := $(CURDIR)
 LOVE    := love
 PIDFILE := $(CURDIR)/.goset-love.pid
 LOGFILE := $(CURDIR)/.goset-love.log
-SRC     := main.lua conf.lua src tests
+SRC     := main.lua conf.lua src tests tools
+RUST_DATA := src/data_rs.lua src/data_rs_adv.lua src/data_rs_pro.lua src/data_rs_quiz.lua
+ALL_DATA  := src/data.lua src/data_adv.lua src/data_pro.lua src/data_quiz.lua $(RUST_DATA)
 STYLUA  := stylua
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start run stop test format status drive version love package app notarize gatekeeper clean
+.PHONY: help start run stop test lint format status drive version love package app notarize gatekeeper clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\n  CAUSEWAYBAY GO  //  Love2D\n\n"} \
@@ -23,7 +25,7 @@ start: ## Run the game (background)
 		echo "already running  pid $$(cat "$(PIDFILE)")"; \
 	else \
 		: > "$(LOGFILE)"; \
-		nohup $(LOVE) "$(APP)" >"$(LOGFILE)" 2>&1 & echo $$! > "$(PIDFILE)"; \
+		nohup $(LOVE) "$(GAME_DIR)" >"$(LOGFILE)" 2>&1 & echo $$! > "$(PIDFILE)"; \
 		sleep 0.8; \
 		if ! kill -0 $$(cat "$(PIDFILE)") 2>/dev/null; then \
 			echo "start failed — see $(LOGFILE)"; \
@@ -50,7 +52,7 @@ stop: ## Stop the game
 		rm -f "$(PIDFILE)"; \
 		echo "stopped  pid $$pid"; \
 	else \
-		pkill -f "love $(APP)" 2>/dev/null || true; \
+		pkill -f "love $(GAME_DIR)" 2>/dev/null || true; \
 		echo "stopped"; \
 	fi
 
@@ -62,18 +64,24 @@ status: ## Is the game running?
 	fi
 
 test: ## Run the Love2D test suite
-	@GOSET_TEST=1 GOSET_HOME="$(APP)/.test-home" $(LOVE) "$(APP)" --test; \
+	@GOSET_TEST=1 GOSET_HOME="$(GAME_DIR)/.test-home" $(LOVE) "$(GAME_DIR)" --test; \
 	status=$$?; \
-	rm -rf "$(APP)/.test-home"; \
+	rm -rf "$(GAME_DIR)/.test-home"; \
 	exit $$status
 
 drive: ## Replay a scripted session: make drive SCRIPT=tests/drive/all.lua
 	@test -n "$(SCRIPT)" || { echo "usage: make drive SCRIPT=path/to/script.lua"; exit 1; }
-	@GOSET_HOME="$(APP)/.drive-home" GOSET_DRIVE="$(SCRIPT)" $(LOVE) "$(APP)"; \
+	@GOSET_HOME="$(GAME_DIR)/.drive-home" GOSET_DRIVE="$(SCRIPT)" $(LOVE) "$(GAME_DIR)"; \
 	status=$$?; \
-	rm -rf "$(APP)/.drive-home"; \
+	rm -rf "$(GAME_DIR)/.drive-home"; \
 	echo "screenshots: ~/Library/Application Support/LOVE/goset-causewaybay"; \
 	exit $$status
+
+lint: ## Check the street data without LÖVE (luajit)
+	@command -v luajit >/dev/null 2>&1 || { echo "luajit not found — brew install luajit"; exit 1; }
+	luajit tools/lint_data.lua $(RUST_DATA)
+	@# a first-tier hint that spells its own answer defeats the two-tier HINT
+	luajit tools/hint_leaks.lua $(ALL_DATA)
 
 format: ## Format Lua with stylua
 	@command -v $(STYLUA) >/dev/null 2>&1 || { \

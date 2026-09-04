@@ -147,11 +147,20 @@ return function(t)
         walk(child, seen)
       end
     end
-    for _, m in ipairs({ "src.data", "src.data_adv", "src.data_pro", "src.data_quiz" }) do
+    for _, m in ipairs({
+      "src.data",
+      "src.data_adv",
+      "src.data_pro",
+      "src.data_quiz",
+      "src.data_rs",
+      "src.data_rs_adv",
+      "src.data_rs_pro",
+      "src.data_rs_quiz",
+    }) do
       walk(require(m), {})
     end
     walk(I18n.STRINGS, {})
-    t.ok(#strings > 700, "found the strings (" .. #strings .. ")")
+    t.ok(#strings > 1400, "found the strings (" .. #strings .. ")")
     for _, lang in ipairs({ "zh", "ja", "es", "cs" }) do
       local tr = I18n.TR[lang]
       t.ok(tr ~= nil, lang .. " has src/lang/" .. lang .. ".lua")
@@ -359,9 +368,149 @@ return function(t)
     t.eq(g.state, "title")
   end)
 
+  t.it("two tracks of four quests; Rust streets carry the rs_ prefix and a scene", function()
+    t.eq(#Quests, 8, "eight quests")
+    t.eq(#Quests.TRACKS, 2)
+    t.eq(#Quests.ofTrack("go"), 4)
+    t.eq(#Quests.ofTrack("rust"), 4)
+    t.eq(Quests.firstOf("rust"), 5)
+    t.eq(Quests.indexInTrack(7), 3, "R3 is the third quest of its track")
+    for q, quest in ipairs(Quests) do
+      t.eq(quest.track, q <= 4 and "go" or "rust", quest.id .. " track")
+      for _, m in ipairs(quest.maps) do
+        if quest.track == "rust" then
+          t.ok(m.id:sub(1, 3) == "rs_", m.id .. " is a Rust street")
+          t.eq(m.viz, "rust", m.id .. " uses the Rust scene")
+          t.ok(type(m.chips) == "table" and #m.chips >= 2, m.id .. " has chips")
+          t.ok(type(m.note) == "string" and #m.note > 0, m.id .. " has a note")
+        else
+          t.ok(m.id:sub(1, 3) ~= "rs_", m.id .. " is a Go street")
+        end
+      end
+    end
+  end)
+
+  t.it("TAB switches Go / Rust on the title and the map; Q stays inside the track", function()
+    local g = fresh()
+    t.eq(g:track(), "go")
+    press(g, "tab")
+    t.eq(g:track(), "rust")
+    t.eq(g.quest, 5)
+    t.eq(g:questIndex(), 1, "the first Rust quest is QUEST 1 of its track")
+    t.eq(g:map().id, "rs_main", "the Rust walk starts on fn main")
+    press(g, "q")
+    t.eq(g.quest, 6)
+    press(g, "q")
+    press(g, "q")
+    press(g, "q")
+    t.eq(g.quest, 5, "Q wraps inside the Rust track")
+    press(g, "q")
+    press(g, "tab")
+    t.eq(g:track(), "go")
+    t.eq(g.quest, 1, "back to the Go quest that was open")
+    press(g, "tab")
+    t.eq(g.quest, 6, "TAB returns to the Rust quest that was open")
+    press(g, "return")
+    t.eq(g.state, "map")
+    press(g, "tab")
+    t.eq(g:track(), "go")
+    t.eq(g.state, "map", "TAB on the map stays on the map")
+    press(g, "tab")
+    press(g, "3")
+    t.eq(g.state, "play")
+    t.eq(g.quest, 6)
+    t.eq(g.step, 3)
+    t.eq(g:map().id:sub(1, 3), "rs_")
+    t.eq(g.input, "", "the digit is not typed")
+    g:setTrack("nope")
+    t.eq(g:track(), "rust", "an unknown track is ignored")
+  end)
+
+  t.it("the track is remembered through the quest index in progress.jsonl", function()
+    local g = fresh()
+    press(g, "tab")
+    press(g, "1")
+    type_(g, g:map().stages[1].answer)
+    press(g, "return")
+    t.eq(g.stage, 2)
+    local rec = require("src.persist").loadProgress()
+    t.eq(rec.quest, 5)
+    t.eq(rec.track, "rust", "the record names the track too")
+    local g2 = Game.new()
+    g2:ingestProgress(rec)
+    g2:enterTitle()
+    t.eq(g2:track(), "rust")
+    t.eq(g2.quest, 5)
+    press(g2, "c")
+    t.eq(g2.state, "play")
+    t.eq(g2:map().id, "rs_main")
+    t.eq(g2.stage, 2)
+    local n, total = g2:trackCleared("rust")
+    t.eq(n, 0)
+    t.eq(total, 28, "four Rust quests of seven streets")
+  end)
+
+  t.it("clearing a Rust street marks it CLEARED on its own track only", function()
+    local g = fresh()
+    press(g, "tab")
+    press(g, "2")
+    for _, st in ipairs(g:map().stages) do
+      type_(g, st.answer)
+      press(g, "return")
+    end
+    t.eq(g.solved, true)
+    t.eq(g:isCleared(2), true)
+    t.eq(g:clearedCount(5), 1)
+    t.eq(g:clearedCount(1), 0, "the Go walk is untouched")
+    local n = g:trackCleared("rust")
+    t.eq(n, 1)
+    n = g:trackCleared("go")
+    t.eq(n, 0)
+    press(g, "escape")
+    t.eq(g.state, "map")
+    t.eq(g:isCleared(2), true, "the map sees the CLEARED street")
+  end)
+
+  -- The Rust track end to end: seven streets, the stamp, and its own win
+  -- screen strings, in every language.
+  t.it("clearing every street of a Rust quest gives that quest's stamp", function()
+    local I18n = require "src.i18n"
+    local g = fresh()
+    press(g, "tab")
+    press(g, "1")
+    t.eq(g:track(), "rust")
+    for i = 1, 7 do
+      t.eq(g.state, "play")
+      t.eq(g.step, i)
+      local m = g:map()
+      for _, st in ipairs(m.stages) do
+        type_(g, st.answer)
+        press(g, "return")
+      end
+      t.eq(g.solved, true, m.id .. " clear")
+      press(g, "return")
+    end
+    t.eq(g.state, "win")
+    local win = g:questDef().win
+    t.eq(win.stamp, "SERVED")
+    for _, lang in ipairs(I18n.LANGS) do
+      I18n.set(lang)
+      t.ok(#I18n.t(win.title) > 0 and I18n.t(win.title) ~= win.title, lang .. " win title")
+      t.ok(#I18n.t(win.head) > 0 and I18n.t(win.head) ~= win.head, lang .. " win head")
+    end
+    I18n.set("en")
+    t.eq(g:clearedCount(5), 7)
+    t.eq(g:clearedCount(1), 0, "the Go walk is still open")
+    local n = g:trackCleared("rust")
+    t.eq(n, 7)
+    press(g, "return")
+    t.eq(g.state, "map")
+    press(g, "tab")
+    t.eq(g:allCleared(), false, "the Go track has no stamp yet")
+  end)
+
   t.it("Q cycles the quests on the title and the map; digits jump inside it", function()
     local g = fresh()
-    t.eq(#Quests, 4, "four quests")
     t.eq(g.quest, 1)
     press(g, "q")
     t.eq(g.quest, 2)
