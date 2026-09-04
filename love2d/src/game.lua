@@ -21,6 +21,7 @@ local World = require "src.world"
 local UI = require "src.ui"
 local I18n = require "src.i18n"
 local SFX = require "src.sfx"
+local Ferris = require "src.ferris"
 local P = I18n.pick
 local T = I18n.t
 
@@ -282,7 +283,10 @@ function Game.new()
   g.mapWalking = false
   g.mapHits = {}
   g.stationHits = {}
-  g.questHits = {}
+  g.questHits = {} -- { rect, quest index } per tab of the current track
+  g.trackHits = {} -- { rect, track id } per GO / RUST button
+  g.trackQuest = {} -- last quest visited per track, so TAB returns there
+  g.trackK = 1 -- track switch animation (0 = just switched)
   g.auto = false -- AUTO: solving by itself
   g.autoPhase, g.autoT, g.autoChars = "read", 0, nil
   g.actAuto = nil
@@ -351,6 +355,7 @@ function Game:ingestProgress(rec)
     quest = 1
   end
   self.quest = quest
+  self.trackQuest[Quests[quest].track] = quest
   local step = tonumber(rec.step)
   if step and step >= 1 and step <= #self:maps() then
     local stage = tonumber(rec.stage) or 1
@@ -395,14 +400,49 @@ function Game:clearedCount(q)
   return n
 end
 
--- Switch quest. Only meaningful on the title and the map; the street list,
--- the map cursor and the station strip all follow self.quest.
-function Game:setQuest(q)
-  q = ((tonumber(q) or 1) - 1) % #Quests + 1
+-- The language track (go / rust) of the current quest. A track is not stored
+-- on its own: progress.jsonl keeps the flat quest index, and the track
+-- follows from it.
+function Game:track()
+  return Quests[self.quest].track
+end
+
+function Game:trackDef()
+  return Quests.trackDef(self:track())
+end
+
+-- Flat quest indices of the current track, in tab order.
+function Game:trackQuests()
+  return Quests.ofTrack(self:track())
+end
+
+-- The quest's number inside its track: what QUEST %d and the stamp use.
+function Game:questIndex()
+  return Quests.indexInTrack(self.quest)
+end
+
+-- CLEAR streets across every quest of one track (the current one by default).
+function Game:trackCleared(track)
+  local n, total = 0, 0
+  for _, q in ipairs(Quests.ofTrack(track or self:track())) do
+    n = n + self:clearedCount(q)
+    total = total + #Quests[q].maps
+  end
+  return n, total
+end
+
+-- Switch quest by flat index. Only meaningful on the title and the map; the
+-- street list, the map cursor and the station strip all follow self.quest.
+function Game:setQuest(q, quiet)
+  q = tonumber(q) or 1
+  if not Quests[q] then
+    q = 1
+  end
   if q == self.quest then
     return
   end
   self.quest = q
+  self.trackQuest[Quests[q].track] = q
   self.streak = 0
   if self.mapFrom == "play" then
     -- the street we came from belongs to the other quest: no "resume"
@@ -414,11 +454,44 @@ function Game:setQuest(q)
     self.mapHeroX, self.mapHeroY = nil, nil
     self.mapWalking = false
   end
-  SFX.play("select")
+  if not quiet then
+    SFX.play("select")
+  end
 end
 
+-- Q: the next quest of the same track, wrapping.
 function Game:toggleQuest()
-  self:setQuest(self.quest + 1)
+  local list = self:trackQuests()
+  for i, q in ipairs(list) do
+    if q == self.quest then
+      self:setQuest(list[i % #list + 1])
+      return
+    end
+  end
+  self:setQuest(list[1])
+end
+
+-- TAB / the GO and RUST buttons: switch language track. Lands on the quest
+-- the player last visited in that track, else its first quest.
+function Game:setTrack(id)
+  if id == self:track() or not Quests.trackDef(id) or Quests.trackDef(id).id ~= id then
+    return
+  end
+  self:setQuest(self.trackQuest[id] or Quests.firstOf(id), true)
+  self.trackK = 0
+  self:burst(W * 0.5, self.state == "map" and (TOP + 40) or (H * 0.5), 40)
+  SFX.play("lang")
+end
+
+function Game:toggleTrack()
+  local tracks = Quests.TRACKS
+  for i, t in ipairs(tracks) do
+    if t.id == self:track() then
+      self:setTrack(tracks[i % #tracks + 1].id)
+      return
+    end
+  end
+  self:setTrack(tracks[1].id)
 end
 
 function Game:isCleared(i)
@@ -509,22 +582,30 @@ function Game:mapPanelH()
   return fontOf("ui"):getHeight() + smF:getHeight() * (1 + math.max(1, #helpLines)) + 44
 end
 
+-- The GO / RUST switch sits in a bar right under the HUD on the map.
+local TRACK_BTN_W = 150
+function Game:trackBarH()
+  local f, sf = fontOf("button"), fontOf("stationSm")
+  return math.max(PORT and 68 or 60, f:getHeight() + sf:getHeight() + BTN_FRAME + 18)
+end
+
 -- Level dots, in virtual coordinates. Landscape: a zig-zag left to right.
 -- Portrait: a zig-zag from the bottom up.
 function Game:mapNodes()
   local nodes = {}
   local n = #self:maps()
   local panelH = self:mapPanelH()
+  local barH = self:trackBarH()
   if PORT then
     local xs = { 0.26, 0.70, 0.30, 0.72, 0.28, 0.70, 0.42 }
-    local y0, y1 = TOP + 90, H - panelH - 70
+    local y0, y1 = TOP + 90 + barH, H - panelH - 70
     for i = 1, n do
       local f = (i - 1) / math.max(1, n - 1)
       nodes[i] = { x = W * (xs[i] or 0.5), y = ease.lerp(y1, y0, f) }
     end
   else
     local ys = { 0.76, 0.40, 0.68, 0.30, 0.64, 0.36, 0.62 }
-    local y0, y1 = TOP + 50, H - panelH - 56
+    local y0, y1 = TOP + 50 + barH, H - panelH - 56
     for i = 1, n do
       local f = (i - 1) / math.max(1, n - 1)
       nodes[i] = { x = ease.lerp(W * 0.09, W * 0.91, f), y = ease.lerp(y0, y1, ys[i] or 0.5) }
@@ -715,6 +796,7 @@ function Game:update(dt)
   self.flash = math.max(0, self.flash - dt * 3)
   self.fade = E.smooth(self.fade, 0, dt, 3.2)
   self.hop = math.max(0, self.hop - dt)
+  self.trackK = math.min(1, self.trackK + dt * 2.4)
 
   for i = #self.particles, 1, -1 do
     local p = self.particles[i]
@@ -1222,9 +1304,13 @@ function Game:drawTitle()
   love.graphics.printf(T("subtitle"), 0, ty + th + 6, W, "center")
   love.graphics.setFont(smF)
   love.graphics.setColor(COL.cream[1], COL.cream[2], COL.cream[3], k * 0.95)
-  love.graphics.printf(T("tagline"), 0, ty + th + sh + 12, W, "center")
+  love.graphics.printf(T(self:track() == "rust" and "tagline_rust" or "tagline"), 0, ty + th + sh + 12, W, "center")
 
   local hx = ease.lerp(-ch, W * 0.18, k)
+  if self:track() == "rust" then
+    -- Ferris scuttles ahead of the group on the Rust track
+    Ferris.draw(hx - gap * 0.55, gy, ch * 0.42, self.t, { walk = self.intro < 1, look = 1 })
+  end
   sprites.draw("hero", hx, gy, { t = self.t, walk = self.intro < 1, facing = 1, h = ch })
   sprites.draw("mei", hx + gap, gy, { t = self.t + 0.4, walk = self.intro < 1, facing = 1, h = ch })
   sprites.draw("cook", hx + gap * 1.9, gy, { t = self.t + 0.9, walk = self.intro < 1, facing = 1, h = ch })
@@ -1253,11 +1339,11 @@ function Game:drawTitle()
   else
     love.graphics.printf(T("title_fresh"), 12, H - bar + 12 + uh, W - 24, "center")
   end
-  -- which quest ENTER opens
+  -- which track and quest ENTER opens
   local quest = self:questDef()
-  setC(Theme.navy, 0.95 * k)
+  setC(self:track() == "rust" and Theme.brick or Theme.navy, 0.95 * k)
   love.graphics.printf(
-    T("quest_tab", self.quest) .. "   " .. P(quest.name),
+    T("track_line", self:trackDef().label) .. "   " .. T("quest_tab", self:questIndex()) .. "   " .. P(quest.name),
     12,
     H - bar + 12 + uh + mh + 6,
     W - 24,
@@ -1394,9 +1480,70 @@ function Game:drawOverworldBg()
   local sc = math.max(W / iw, H / ih)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.draw(img, (W - iw * sc) * 0.5, (H - ih * sc) * 0.5, 0, sc, sc)
-  -- night haze so dots and labels pop
-  love.graphics.setColor(0.02, 0.02, 0.10, 0.22)
+  -- haze so dots and labels pop: a blue night for Go, a rust sunset for Rust
+  if self:track() == "rust" then
+    love.graphics.setColor(0.32, 0.08, 0.02, 0.26)
+  else
+    love.graphics.setColor(0.02, 0.02, 0.10, 0.22)
+  end
   love.graphics.rectangle("fill", 0, 0, W, H)
+end
+
+-- One GO / RUST button: the track's colour when it is the open one, and its
+-- CLEAR count across the four quests underneath the label.
+function Game:trackBtn(x, y, w, h, track, lit)
+  local def = Quests.trackDef(track)
+  local hit = Layout.hit(x, y, w, h)
+  local col = track == "rust" and { 0.95, 0.47, 0.16, 1 } or Theme.cyan
+  local pop = 1 + (lit and 0.12 * (1 - ease.expOut(self.trackK)) or 0)
+  love.graphics.push()
+  love.graphics.translate(x + w * 0.5, y + h * 0.5)
+  love.graphics.scale(pop, pop)
+  love.graphics.translate(-(x + w * 0.5), -(y + h * 0.5))
+  UI.panel(x, y, w, h, lit and col or (hit and Theme.coin or Theme.panel))
+  local f, sf = fontOf("button"), fontOf("stationSm")
+  local n, total = self:trackCleared(track)
+  local top, bot = labelInk(f, def.label)
+  local ty = y + 8 + 3 - top
+  love.graphics.setFont(f)
+  setC(Theme.ink, lit and 1 or 0.75)
+  love.graphics.printf(def.label, x, ty, w, "center")
+  love.graphics.setFont(sf)
+  setC(Theme.ink, lit and 0.9 or 0.6)
+  love.graphics.printf(T("clear_count", n, total), x, ty + (bot - top) + 6, w, "center")
+  if n == total and total > 0 then
+    star(x + w - 12, y + 10, 8, Theme.coin)
+  end
+  love.graphics.pop()
+  if lit then
+    -- pointer under the open track
+    local px = x + w * 0.5
+    setC(Theme.ink)
+    love.graphics.polygon("fill", px - 10, y + h - 2, px + 10, y + h - 2, px, y + h + 8)
+    setC(col)
+    love.graphics.polygon("fill", px - 6, y + h - 2, px + 6, y + h - 2, px, y + h + 4)
+  end
+end
+
+-- The bar of GO / RUST buttons, with each track's mascot beside its button.
+function Game:drawTrackBar()
+  local barH = self:trackBarH()
+  local bw, bh = TRACK_BTN_W, barH - 10
+  local gap = 28
+  local y = TOP + 6
+  local x0 = math.floor(W * 0.5 - bw - gap * 0.5)
+  self.trackHits = {}
+  for i, def in ipairs(Quests.TRACKS) do
+    local x = x0 + (i - 1) * (bw + gap)
+    local lit = def.id == self:track()
+    self:trackBtn(x, y, bw, bh, def.id, lit)
+    self.trackHits[#self.trackHits + 1] = { { x, y, bw, bh }, def.id }
+    if def.item == "ferris" then
+      Ferris.draw(x + bw + 34, y + bh - 2, 34, self.t, { walk = lit, look = -1 })
+    elseif def.item then
+      sprites.item(def.item, x - 30, y + bh * 0.5, 40, math.sin(self.t * 2) * (lit and 0.12 or 0))
+    end
+  end
 end
 
 -- The street picker as a 16-bit overworld: a dotted path across Causeway
@@ -1418,25 +1565,32 @@ function Game:drawMap()
   local n = #self:maps()
   local labelF = PORT and fontOf("stationSm") or fontOf("station")
 
-  -- quest tabs: BASIC / ADVANCED / DELIVERY, the lit one is open
+  -- quest tabs of the open track: BASIC / ADVANCED / DELIVERY / RUSH, the
+  -- lit one is open, a star marks a quest with every street CLEAR
   self.questHits = {}
+  local tabs = self:trackQuests()
   local tabF = fontOf("button")
   local tabW = 0
-  for q = 1, #Quests do
+  for _, q in ipairs(tabs) do
     tabW = math.max(tabW, tabF:getWidth(Quests[q].station) + 24)
   end
   -- they must not run into the language button on the right
   local tabGap = 6
   local tabRoom = HUD.lang[1] - 12 - 16
-  local byName = #Quests * (tabW + tabGap) <= tabRoom
+  local byName = #tabs * (tabW + tabGap) <= tabRoom
   if not byName then
     tabW = math.max(56, tabF:getWidth("Q3") + 24)
   end
-  for q = 1, #Quests do
-    local r = { 12 + (q - 1) * (tabW + tabGap), HUD.full[2], tabW, HUD.full[4] }
-    self.questHits[q] = r
+  for i, q in ipairs(tabs) do
+    local r = { 12 + (i - 1) * (tabW + tabGap), HUD.full[2], tabW, HUD.full[4] }
+    self.questHits[#self.questHits + 1] = { r, q }
     self:pixBtn(r[1], r[2], r[3], r[4], byName and Quests[q].station or Quests[q].tag, q == self.quest)
+    if self:clearedCount(q) == #Quests[q].maps then
+      star(r[1] + r[3] - 6, r[2] + 4, 7 + math.sin(self.t * 4 + i) * 1.5, Theme.coin)
+    end
   end
+
+  self:drawTrackBar()
 
   -- dotted path; the stretch after a cleared street lights up gold
   for i = 1, n - 1 do
@@ -1467,6 +1621,8 @@ function Game:drawMap()
       sprites.item("item_set", nd.x - 40, nd.y - 34, 44, -0.15)
     elseif m.id == "kitchen" or m.id == "times" or m.id == "flat" then
       sprites.item("item_hashbrown", nd.x - 42, nd.y - 36, 48, 0.1)
+    elseif m.id:sub(1, 3) == "rs_" and (i == 1 or i == n) then
+      Ferris.draw(nd.x - 44, nd.y - 20, 28, self.t + i, { look = 1 })
     end
     setC(Theme.ink)
     love.graphics.circle("fill", nd.x, nd.y, 17)
@@ -1475,23 +1631,39 @@ function Game:drawMap()
     love.graphics.setColor(1, 1, 1, 0.55)
     love.graphics.circle("fill", nd.x - 4, nd.y - 5, 4)
     if cleared then
-      -- CLEAR: a check on the dot and a green ribbon over it
+      -- CLEARED: a check on the dot, a tilted green stamp over it, a gold
+      -- star and a ring of twinkles
       love.graphics.setLineWidth(3)
       setC(Theme.cream)
       love.graphics.line(nd.x - 6, nd.y, nd.x - 2, nd.y + 5, nd.x + 7, nd.y - 6)
       love.graphics.setLineWidth(1)
+      for s = 1, 3 do
+        local a = self.t * 1.6 + s * (math.pi * 2 / 3) + i
+        local tw = 0.5 + 0.5 * math.sin(self.t * 5 + s * 2 + i)
+        setC(Theme.coin, 0.35 + 0.65 * tw)
+        love.graphics.circle("fill", nd.x + math.cos(a) * 24, nd.y + math.sin(a) * 24, 1.5 + 2 * tw)
+      end
       local rf = labelF
-      local rw = rf:getWidth(T("clear")) + 16
+      local rw = rf:getWidth(T("cleared")) + 16
       local rh = rf:getHeight() + 4
-      local rx, ry = nd.x - rw * 0.5, nd.y - 24 - rh
+      -- clear of Alex's head when he is standing on this dot
+      local lift = (self.mapHeroAt == i or self.mapCursor == i) and (PORT and 74 or 66) or 26
+      local rx, ry = nd.x - rw * 0.5, nd.y - lift - rh
+      love.graphics.push()
+      love.graphics.translate(nd.x, ry + rh * 0.5)
+      love.graphics.rotate(-0.10)
+      love.graphics.translate(-nd.x, -(ry + rh * 0.5))
       setC(Theme.ink)
       love.graphics.rectangle("fill", rx - 2, ry - 2, rw + 4, rh + 4, 3, 3)
       setC(Theme.admit)
       love.graphics.rectangle("fill", rx, ry, rw, rh, 3, 3)
+      setC(Theme.cream, 0.5)
+      love.graphics.rectangle("line", rx + 2, ry + 2, rw - 4, rh - 4, 2, 2)
       love.graphics.setFont(rf)
       setC(Theme.cream)
-      love.graphics.printf(T("clear"), rx, ry + 2, rw, "center")
-      star(nd.x + 20, nd.y - 30 - rh * 0.5, 9, Theme.coin)
+      love.graphics.printf(T("cleared"), rx, ry + 2, rw, "center")
+      love.graphics.pop()
+      star(rx - 6, ry + rh * 0.5, 9, Theme.coin)
     end
     if here and not cleared then
       love.graphics.setColor(1, 1, 1, 0.6 + 0.4 * math.sin(self.t * 5))
@@ -1542,11 +1714,11 @@ function Game:drawMap()
   love.graphics.setFont(uiF)
   setC(Theme.ink)
   love.graphics.print(
-    string.format("%s  %d  %s", self:questDef().station, self.mapCursor, m.station),
+    string.format("%s  %s  %d  %s", self:trackDef().label, self:questDef().station, self.mapCursor, m.station),
     pad + 18,
     py + 14
   )
-  local tag = cleared and T("clear") or (here and T("here") or "")
+  local tag = cleared and T("cleared") or (here and T("here") or "")
   local nClear = self:clearedCount()
   local right = T("clear_count", nClear, #self:maps())
   if tag ~= "" then
@@ -1637,7 +1809,7 @@ function Game:drawPlay()
     local uiF = assets.font.ui
     local text
     if self:allCleared() then
-      text = T(self.quest == 1 and "clear_stamp" or "clear_prize")
+      text = T(self:questIndex() == 1 and "clear_stamp" or "clear_prize")
     elseif self.step >= #self:maps() then
       text = T("clear_map")
     else
@@ -2209,6 +2381,53 @@ function Game.viz.workers(self, m)
   )
 end
 
+-- The Rust track: every street describes its own scene as `chips` (short
+-- code, lit one after another) and a `note`, with Ferris scuttling about.
+local CHIP_FILL = { cyan = nil, gold = GOLDBG, pink = PINKBG, green = GREENBG }
+local CHIP_INK = { cyan = COL.cyan, gold = Theme.coin, pink = COL.neon, green = Theme.admit }
+function Game.viz.rust(self, m)
+  local chips = m.chips or {}
+  local n = #chips
+  local lit = 1 + math.floor(self.t * 1.1) % math.max(1, n)
+  local f = assets.font.small
+  local noteF = assets.font.codeSm or f
+  -- the column has to end above the sidewalk, whatever SCENE_H is
+  local noteH = (m.note and m.note ~= "" and noteF:getHeight() + 4) or 0
+  local bottom = 190
+  local step = math.min(34, math.floor((bottom - 40 - noteH) / math.max(1, n)))
+  local chipH = math.max(22, step - 4)
+  local y0 = 40
+  for i, ch in ipairs(chips) do
+    local y = y0 + (i - 1) * step
+    local rise = ease.expOut(ease.clamp((self.mapT - i * 0.12) / 0.5, 0, 1))
+    local w = math.max(150, f:getWidth(ch[1]) + 28)
+    local on = i == lit
+    chip(
+      300 + (1 - rise) * 40,
+      y,
+      w,
+      chipH,
+      ch[1],
+      on and (CHIP_FILL[ch[2]] or COL.paper) or COL.paper,
+      on and CHIP_INK[ch[2]] or { 1, 1, 1, 0.55 },
+      f
+    )
+  end
+  if noteH > 0 then
+    love.graphics.setFont(noteF)
+    setC(COL.gold, 0.9)
+    love.graphics.print(m.note, 300, y0 + n * step + 2)
+  end
+  local fx = 940 + math.sin(self.t * 0.6) * 60
+  Ferris.draw(fx, 196, 52, self.t, { walk = true, facing = math.cos(self.t * 0.6) >= 0 and 1 or -1, look = 1 })
+  if self.solved then
+    love.graphics.setFont(assets.font.stamp)
+    local k = ease.expOut(self.stamp)
+    love.graphics.setColor(0.22, 0.62, 0.38, 0.4 + 0.6 * k)
+    love.graphics.printf("OK", fx - 100, 96 - k * 12, 200, "center")
+  end
+end
+
 -- The bottom half: story + question (left), code with the blank (right),
 -- the input prompt, and HINT / OK / NEXT buttons.
 function Game:drawTerminal(m)
@@ -2639,6 +2858,8 @@ function Game:keypressed(key)
       self:enterMap("title")
     elseif key == "q" then
       self:toggleQuest()
+    elseif key == "tab" then
+      self:toggleTrack()
     elseif key == "escape" then
       love.event.quit()
     else
@@ -2655,6 +2876,8 @@ function Game:keypressed(key)
       self:leaveMap()
     elseif key == "q" then
       self:toggleQuest()
+    elseif key == "tab" then
+      self:toggleTrack()
     elseif key == "left" or key == "up" or key == "a" or key == "w" or key == "h" or key == "k" then
       self.mapCursor = (self.mapCursor - 2) % #self:maps() + 1
       SFX.play("move")
@@ -2763,9 +2986,15 @@ function Game:mousepressed(x, y, button)
 
   local st = self.state
   if st == "map" then
-    for q, r in ipairs(self.questHits) do
-      if inRect(vx, vy, r) then
-        self:setQuest(q)
+    for _, h in ipairs(self.trackHits) do
+      if inRect(vx, vy, h[1]) then
+        self:setTrack(h[2])
+        return
+      end
+    end
+    for _, h in ipairs(self.questHits) do
+      if inRect(vx, vy, h[1]) then
+        self:setQuest(h[2])
         return
       end
     end

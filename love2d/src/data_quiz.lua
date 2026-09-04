@@ -1576,7 +1576,7 @@ ___(jobs)                    // worker 嘅 range loop 結束
         hint = L(
           "Only the sender closes. Sending after this panics.",
           "보내는 쪽만 닫는다. 이후에 보내면 panic.",
-          "淨係 sender 先 close。之後再 send 會 panic。"
+          "淨係 sender 嗰邊先閂得。閂完再 send 會 panic。"
         ),
         ok = L(
           "close(jobs) is the shutdown signal: every worker's range loop drains and exits.",
