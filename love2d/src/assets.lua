@@ -13,6 +13,11 @@ local SPRITE = {
   sprite_monty = true,
   sprite_ferris = true,
   sprite_gogo = true,
+  fx_star = true,
+  fx_confetti = true,
+  fx_ribbon = true,
+  fx_trophy = true,
+  fx_medal = true,
 }
 
 local CHAR = {
@@ -32,6 +37,13 @@ local SIZE = {
   sprite_monty = { 128, 128 },
   sprite_ferris = { 128, 128 },
   sprite_gogo = { 128, 128 },
+  -- the CLEAR effects (src/fx.lua): a sparkle, a confetti piece, a ribbon
+  -- banner, a trophy and a medal, all Grok sprites on magenta
+  fx_star = { 48, 48 },
+  fx_confetti = { 24, 24 },
+  fx_ribbon = { 512, 512 },
+  fx_trophy = { 192, 192 },
+  fx_medal = { 160, 160 },
 }
 
 local function knockout(data)
@@ -367,6 +379,11 @@ function Assets.load()
     "sprite_monty",
     "sprite_ferris",
     "sprite_gogo",
+    "fx_star",
+    "fx_confetti",
+    "fx_ribbon",
+    "fx_trophy",
+    "fx_medal",
   }
   for i = 1, #names do
     local name = names[i]

@@ -19,6 +19,23 @@ track has **BIG O**, seven streets on how fast code is, and every track ends in
 **CALLBACK**, the second interview: the seven whiteboard classics CODE RUSH
 left out. A street you finish is stamped **CLEARED** on the map, for good.
 
+**Every clear pays off.** A right blank pops a sparkle and a word; a street
+CLEAR drops a ribbon banner with confetti, shockwaves and a medal if you were
+PERFECT; a finished quest fills the screen with fireworks, gold rays and a
+trophy. The sprites came from Grok (`love2d/tools/grok_image.sh`).
+
+**Then it gets concurrent.** The Go track ends in **Q7 THREADS**, the lunch
+rush: two tills on one counter, forty riders on eight bikes, a rider who gave
+up, and the question every newcomer asks, where is `await`. The Python track
+ends in **P6 PARALLEL**, the 2 a.m. batch that threads could not speed up:
+the GIL, processes, pools, queues, shared memory and futures.
+
+**Where do the paths come from?** The Go track ends in **Q8 MODULES**, the
+question every newcomer hits on day two: why does an import start with
+`github.com/`, what does `go mod init` actually name, why does `./menu` not
+work, and what happens when you `go get` someone's repo. Alex splits the app
+into packages and ships it as `v1.0.0` for the Times Square shop to import.
+
 **It is a game.** Right answers pay XP, combos and FAST answers pay more, streets
 and stamps pay a lot, and fourteen badges (FIRST CLEAR, COMBO x10, POLYGLOT,
 BIG O MASTER, NIGHT OWL ...) pop as you earn them. Your level and XP bar sit on
@@ -38,9 +55,9 @@ cd love2d
 love .
 ```
 
-Three tracks, seventeen quests, 119 streets. Every map dot is a topic.
+Three tracks, twenty quests, 140 streets. Every map dot is a topic.
 
-**GO** — six quests:
+**GO** — eight quests:
 
 - **Q1 BASIC** — PACKAGE · VARS · LOOPS · FUNCS · SLICES · MAPS · STRUCTS
 - **Q2 ADVANCED** — DEFER · GO · CHAN · SELECT · SYNC · GENERIC · CONTEXT
@@ -48,6 +65,8 @@ Three tracks, seventeen quests, 119 streets. Every map dot is a topic.
 - **Q4 CODE RUSH** — RECURSE · TREE · GRAPH · LIST · SORT · HASH · WORKERS (the interview game show, with combos and PERFECT)
 - **Q5 BIG O** — O(1) · O(N) · O(LOG N) · N LOG N · O(N^2) · O(2^N) · SPACE
 - **Q6 CALLBACK** — STACK · DP · WINDOW · HEAP · INTERVAL · LRU · GRID (the second interview: valid parentheses, stairs and coins, Kadane, k-th largest, merge intervals, LRU cache, islands)
+- **Q7 THREADS** — MUTEX · ATOMIC · SHARE · POOL · PIPE · CONTEXT · ASYNC (the lunch rush: locks and the race detector, atomics and Once, shared references and the memory model, worker pools and GOMAXPROCS, closed and nil channels, cancellation, and where Go keeps async/await)
+- **Q8 MODULES** — MODULE · PACKAGE · GO GET · INTERNAL · REPLACE · VERSION · PROXY (packages and paths: the module path *is* the import path, a folder is a package, importing straight from `github.com/...`, go.mod and go.sum, internal and cmd, replace and go.work, semver tags and /v2, the proxy and private repos)
 
 **RUST** — six quests, the afternoon:
 
@@ -58,13 +77,14 @@ Three tracks, seventeen quests, 119 streets. Every map dot is a topic.
 - **R5 BIG O** — O(1) · O(N) · O(LOG N) · N LOG N · O(N^2) · O(2^N) · SPACE
 - **R6 CALLBACK** — the same seven whiteboard classics, in Rust
 
-**PYTHON** — five quests, the night shift:
+**PYTHON** — six quests, the night shift:
 
 - **P1 BASIC** — PRINT · VARS · FLOW · FUNCS · LISTS · DICTS · CLASSES
 - **P2 ADVANCED** — EXCEPT · YIELD · DECOR · WITH · ASYNC · TYPING · THREADS
 - **P3 CODE RUSH** — RECURSE · TREE · GRAPH · LIST · SORT · HASH · WORKERS (the midnight Python round)
 - **P4 BIG O** — the same seven streets, in Python
 - **P5 CALLBACK** — the same seven whiteboard classics, in Python
+- **P6 PARALLEL** — GIL · PROCESS · POOL · QUEUE · LOCK · SHARED · FUTURES (the night batch: why threads do not scale, Process and the main guard, Pool and chunksize, Queue and Pipe, locks and Value, shared_memory, ProcessPoolExecutor)
 
 Big O is the same quiz three times: read a loop, name its cost (O(1), O(n),
 O(log n), n log n, O(n^2), O(2^n)), then write the faster version in that

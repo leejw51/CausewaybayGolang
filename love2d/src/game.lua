@@ -25,6 +25,7 @@ local Ferris = require "src.ferris"
 local Monty = require "src.monty"
 local Share = require "src.share"
 local Stats = require "src.stats"
+local FX = require "src.fx"
 local P = I18n.pick
 local T = I18n.t
 
@@ -247,6 +248,7 @@ function Game.new()
   g.frame = 0
   g.intro = 0
   g.particles = {}
+  g.fx = FX.new() -- the CLEAR effects, three tiers (src/fx.lua)
   g.shake = 0
   g.flash = 0
   g.flashKind = "bad"
@@ -762,6 +764,9 @@ function Game:enterWin()
   SFX.play("win")
   self.fade = 1
   self:burst(W * 0.5, H * 0.4, 80)
+  self.fx:clear()
+  -- the top of the win screen: the banner rides above the stamp, not on it
+  self.fx:quest({ x = 0, y = 0, w = W, h = H * 0.62 }, T("fx_quest"))
   self:save()
   self:reward(Stats.onStamp(self), true)
 end
@@ -782,6 +787,7 @@ function Game:loadMap(i)
   self.msgKind = "idle"
   self.stamp = 0
   self.hop = 0
+  self.fx:clear()
   local m = self:maps()[i]
   self.player.x = m.spawn
   self.player.facing = 1
@@ -838,6 +844,7 @@ function Game:update(dt)
   self.hop = math.max(0, self.hop - dt)
   self.trackK = math.min(1, self.trackK + dt * 2.4)
 
+  self.fx:update(dt)
   for i = #self.particles, 1, -1 do
     local p = self.particles[i]
     p.life = p.life - dt
@@ -1139,6 +1146,7 @@ function Game:submit()
     self.idle = 0
     self.streak = self.streak + 1
     self:burst(W * 0.5, TOP + SCENE_H * 0.45, 36 + math.min(self.streak, 8) * 12)
+    self.fx:small(W * 0.5, TOP + SCENE_H * 0.62, T("fx_step"))
     if self.streak >= 2 then
       self:pop(T("combo", self.streak), "combo")
     end
@@ -1160,7 +1168,6 @@ function Game:submit()
       self.solved = true
       self.input = ""
       self:setHint(0)
-      self:markClear(self.step)
       self.flashKind = "good"
       self.flash = 0.45
       if self.misses == 0 then
@@ -1172,6 +1179,10 @@ function Game:submit()
       else
         SFX.play("clear")
       end
+      -- the whole street is CLEAR: the big tier over the scene
+      self.fx:clear()
+      self.fx:big({ x = 0, y = TOP, w = W, h = SCENE_H }, T("fx_street"), self.perfect)
+      self:markClear(self.step)
       self:reward(Stats.onClear(self, self.perfect))
     end
     self:save()
@@ -1308,6 +1319,7 @@ function Game:draw()
   end
 
   self:drawParticles()
+  self.fx:draw(assets)
   love.graphics.pop()
   love.graphics.setScissor()
 
@@ -1887,6 +1899,8 @@ function Game:drawPlay()
   -- COMBO / +XP / PERFECT / LEVEL UP / BADGE pop-ups: slam in, hang, drift
   -- up. Big ones stack downward so a PERFECT and a badge both read.
   local bigAt, smallAt = 0, 0
+  -- a CLEAR banner owns the middle of the scene: the pops queue below it
+  local banner = #self.fx.banners > 0
   for _, p in ipairs(self.pops) do
     local big = BIG_POP[p.kind] == true
     local life = popLife(p)
@@ -1899,10 +1913,10 @@ function Game:drawPlay()
     local th = f:getHeight()
     local y
     if big then
-      y = SCENE_H * 0.30 + bigAt * (th + 22) - p.t * 18
+      y = SCENE_H * (banner and 0.84 or 0.30) + bigAt * (th + 22) - p.t * 18
       bigAt = bigAt + 1
     else
-      y = SCENE_H * 0.14 + smallAt * (th + 16) - p.t * 18
+      y = SCENE_H * (banner and 0.06 or 0.14) + smallAt * (th + 16) - p.t * 18
       smallAt = smallAt + 1
     end
     local col = ({ perfect = COL.gold, level = COL.gold, badge = COL.cyan, xp = COL.admit })[p.kind] or COL.neon

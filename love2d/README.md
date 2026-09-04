@@ -39,7 +39,7 @@ title  --ENTER-->  map  --ENTER / click / 1-7-->  play  --CLEAR, ENTER-->  next 
   Monty fall back to primitives when a sheet is missing). The map's haze turns
   from night blue to rust orange to midnight with the track. Progress is per
   street, so all three tracks can be half done at once.
-- **Quests**: six for Go and Rust, five for Python. **Q1 BASIC** is the walk
+- **Quests**: eight for Go, six for Rust and Python. **Q1 BASIC** is the walk
   (packages through structs). **Q2 ADVANCED** is the kitchen (defer through
   context). **Q3 DELIVERY** is the app (strings through the newest standard
   library). **Q4 CODE RUSH** is the interview game show (recursion, trees,
@@ -50,11 +50,21 @@ title  --ENTER-->  map  --ENTER / click / 1-7-->  play  --CLEAR, ENTER-->  next 
   classics CODE RUSH left out (a stack and valid parentheses, DP with stairs
   and coin change, sliding windows and Kadane, a heap and the k-th largest,
   merging intervals, an LRU cache, DFS over a grid of islands). The Rust
-  track mirrors them as **R1**–**R6**; the Python track is **P1 BASIC** (print
+  **Q7 THREADS** is the lunch rush, the concurrency quest: a mutex and the
+  race detector, atomics and sync.Once, shared references and the memory
+  model, worker pools and GOMAXPROCS, channel pipelines, context, and where
+  Go keeps its async and await. **Q8 MODULES** is the repo quest: the module
+  path is the import path, one directory is one package, importing straight
+  from github.com, go.mod, go.sum and the module cache, internal/ and cmd/,
+  replace and go.work, semver tags and the /v2 rule, the proxy and GOPRIVATE.
+  The Rust
+  track mirrors the first six as **R1**–**R6**; the Python track is **P1 BASIC** (print
   through class), **P2 ADVANCED** (except, yield, decorators, with, asyncio,
-  typing, threads), **P3 CODE RUSH** (the midnight Python round), **P4 BIG O**
-  and **P5 CALLBACK**. New quests are appended to the flat list in
-  `src/quests.lua` (9–17), so an old `progress.jsonl` keeps its meaning. **Q** on the title or
+  typing, threads), **P3 CODE RUSH** (the midnight Python round), **P4 BIG O**,
+  **P5 CALLBACK** and **P6 PARALLEL**, the night batch: the GIL, Process and
+  the main guard, Pool, Queue and Pipe, locks and Value, shared memory and
+  ProcessPoolExecutor. New quests are appended to the flat list in
+  `src/quests.lua` (9–20), so an old `progress.jsonl` keeps its meaning. **Q** on the title or
   the map cycles the quests of the open track. Each quest has seven Super Mario
   World-style map dots, and every dot is a topic.
 - **XP and badges** (`src/stats.lua`): a right answer pays 10 XP, each step of
@@ -324,6 +334,58 @@ LÖVE, which is what `make lint` runs and what CI runs first:
 | LRU | the cache | `OrderedDict`, `-1`, `move_to_end`, `popitem`, `maxsize` |
 | GRID | the islands | `len(g[0])`, `"1"`, `"0"`, `c - 1`, `+=` |
 
+### Q7 THREADS — the lunch rush, Go (42 blanks)
+
+| Dot | Street | Blanks |
+| --- | --- | --- |
+| MUTEX | Two tills, one counter | `sync.Mutex`, `defer`, `*Counter`, `RWMutex`, `RLock`, `TryLock` |
+| ATOMIC | The queue counter | `Int64`, `Load`, `CompareAndSwap`, `Pointer`, `Do`, `OnceValue` |
+| SHARE | The shared tray rack | `communicating`, `race`, `Map`, `i`, `heap`, `close` |
+| POOL | Forty riders, eight bikes | `NumCPU`, `GOMAXPROCS`, `Done`, `<-chan`, `<-sem`, `Get` |
+| PIPE | The belt to the counter | `ok`, `zero`, `panics`, `nil`, `cap`, `close` |
+| CONTEXT | The rider who gave up | `ctx`, `WithCancel`, `WithTimeout`, `Done`, `DeadlineExceeded`, `WithValue` |
+| ASYNC | Where is await? | `go`, `<-res`, `1`, `errgroup`, `<-`, `NumGoroutine` |
+
+### P6 PARALLEL — the night batch, Python (42 blanks)
+
+| Dot | Street | Blanks |
+| --- | --- | --- |
+| GIL | Eight cores, one busy | `GIL`, `multiprocessing`, `cpu_count`, `released`, `interpreter`, `free` |
+| PROCESS | Second python, second core | `Process`, `join`, `__name__`, `spawn`, `exitcode`, `daemon` |
+| POOL | Forty thousand photos | `Pool`, `map`, `imap`, `starmap`, `get`, `chunksize` |
+| QUEUE | The dumbwaiter | `Queue`, `get`, `None`, `Pipe`, `picklable`, `task_done` |
+| LOCK | One printer, eight cooks | `Lock`, `release`, `value`, `get_lock`, `Manager`, `Semaphore` |
+| SHARED | The cold room | `copy`, `SharedMemory`, `name`, `buf`, `Array`, `unlink` |
+| FUTURES | Before the morning van | `ProcessPoolExecutor`, `submit`, `result`, `as_completed`, `Process`, `run_in_executor` |
+
+### Q8 MODULES — packages, paths and GitHub, Go (35 blanks)
+
+| Dot | Street | Blanks |
+| --- | --- | --- |
+| MODULE | One go.mod at the root | `github.com/alex/luckymac`, `menu`, `1.23`, `GOMOD`, `on` |
+| PACKAGE | A folder is a package | `menu`, `Price`, `github.com/alex/luckymac/menu`, `relative`, `used` |
+| GO GET | Import from GitHub | `get`, `require`, `sum`, `indirect`, `mod` |
+| INTERNAL | cmd, internal, _test | `internal`, `cmd`, `main`, `Package`, `_test` |
+| REPLACE | Two repos, one laptop | `replace`, `work`, `use`, `tidy`, `vendor` |
+| VERSION | Tag it v1.0.0 | `tag`, `latest`, `v2`, `retract`, `list` |
+| PROXY | The proxy and the private repo | `direct`, `GOPRIVATE`, `insteadOf`, `sum`, `modcache` |
+
+## Effects
+
+`src/fx.lua` draws three tiers of "you did it" over the scene, with sprites
+from `assets/fx_*.png` (Grok, magenta-keyed like the rest) and primitive
+fallbacks so the headless test suite and an art-less build still run:
+
+| Tier | When | What |
+| --- | --- | --- |
+| small | a blank answered | a ring, ten sparkle stars and a word that pops and drifts (0.7 s) |
+| big | a street CLEAR | confetti rain, three shockwaves, a ribbon banner whose letters land one by one, a medal on a PERFECT (2.8 s) |
+| quest | the quest's stamp | fireworks that keep going, heavy confetti, turning gold rays, the trophy (5 s) |
+
+`update()` never touches `love.graphics`, so the tiers are testable data
+(`tests/test_fx.lua`). While a banner is on stage the COMBO / BADGE pops move
+out from under it.
+
 ## Keys
 
 - **TAB** (title, map) / the GO, RUST and PYTHON buttons — cycle the language track
@@ -348,7 +410,8 @@ Override with `GOSET_HOME`. Five JSONL files, append-only:
 - `setup.jsonl` — `setup` / `display` records: orientation, fullscreen,
   language, sound. Last line of each kind wins.
 - `progress.jsonl` — `progress` records: quest (1-4 Go, 5-8 Rust, 9-11
-  Python, 12-14 the three BIG O quests, 15-17 the three CALLBACK quests),
+  Python, 12-14 the three BIG O quests, 15-17 the three CALLBACK quests,
+  18 Go THREADS, 19 Python PARALLEL, 20 Go MODULES),
   track, street, blank, and the list of
   CLEARED street ids across every quest of every track. Last line wins.
 - `stats.jsonl` — `stats` records: XP, level, right / wrong / fast counts,

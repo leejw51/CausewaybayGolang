@@ -7,8 +7,8 @@ PIDFILE := $(CURDIR)/.goset-love.pid
 LOGFILE := $(CURDIR)/.goset-love.log
 SRC     := main.lua conf.lua src tests tools
 RUST_DATA := src/data_rs.lua src/data_rs_adv.lua src/data_rs_pro.lua src/data_rs_quiz.lua src/data_rs_bigo.lua src/data_rs_callback.lua
-PY_DATA   := src/data_py.lua src/data_py_adv.lua src/data_py_quiz.lua src/data_py_bigo.lua src/data_py_callback.lua
-CHIP_DATA := $(RUST_DATA) $(PY_DATA) src/data_bigo.lua src/data_callback.lua
+PY_DATA   := src/data_py.lua src/data_py_adv.lua src/data_py_quiz.lua src/data_py_bigo.lua src/data_py_callback.lua src/data_py_mp.lua
+CHIP_DATA := $(RUST_DATA) $(PY_DATA) src/data_bigo.lua src/data_callback.lua src/data_conc.lua src/data_mod.lua
 ALL_DATA  := src/data.lua src/data_adv.lua src/data_pro.lua src/data_quiz.lua $(CHIP_DATA)
 STYLUA  := stylua
 

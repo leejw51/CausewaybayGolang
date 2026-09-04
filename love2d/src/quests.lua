@@ -20,6 +20,9 @@
 --   GO     15 callback  CALLBACK   the second interview: stack, DP, window, heap, intervals, LRU, grid
 --   RUST   16 rs_callback          the same seven, in Rust
 --   PYTHON 17 py_callback          the same seven, in Python
+--   GO     18 conc      THREADS    the lunch rush: mutex, atomics, pools, channels, context, async
+--   PYTHON 19 py_mp     PARALLEL   the night batch: the GIL, Process, Pool, Queue, shared memory
+--   GO     20 modules   MODULES    packages and paths: go.mod, GitHub imports, internal, replace, semver, proxy
 
 local function L(en, ko, yue)
   return { en = en, ko = ko, yue = yue }
@@ -263,6 +266,48 @@ local Quests = {
     ),
     maps = require "src.data_py_callback",
     win = { stamp = "OFFER", bg = "bg_lab", title = "pcwin_title", head = "pcwin_head" },
+  },
+  {
+    id = "conc",
+    track = "go",
+    tag = "Q7",
+    station = "THREADS",
+    name = L("THREADS  -  the lunch rush", "THREADS  -  점심 러시", "THREADS  -  午市"),
+    goal = L(
+      "Two tills, six woks and forty riders touch the same numbers. Lock it, share it, cancel it. And find Go's await.",
+      "계산대 둘, 웍 여섯, 라이더 마흔이 같은 숫자를 만진다. 잠그고, 공유하고, 취소하라. 그리고 Go의 await를 찾아라.",
+      "兩部收銀、六隻鑊、四十個外賣員掂住同一啲數。上鎖、共享、取消。再搵出 Go 嘅 await。"
+    ),
+    maps = require "src.data_conc",
+    win = { stamp = "SYNCED", bg = "bg_kitchen", title = "twin_title", head = "twin_head" },
+  },
+  {
+    id = "py_mp",
+    track = "python",
+    tag = "P6",
+    station = "PARALLEL",
+    name = L("PARALLEL  -  the night batch", "PARALLEL  -  야간 배치", "PARALLEL  -  夜更批次"),
+    goal = L(
+      "Forty thousand photos before the morning van, and threads made it no faster. Fill every core with processes.",
+      "아침 배송차 전에 사진 사만 장. 스레드로는 빨라지지 않았다. 프로세스로 모든 코어를 채워라.",
+      "朝早架車嚟之前要搞掂四萬張相，用 thread 又冇快過。用 process 填滿每個核。"
+    ),
+    maps = require "src.data_py_mp",
+    win = { stamp = "SCALED", bg = "bg_night", title = "mpwin_title", head = "mpwin_head" },
+  },
+  {
+    id = "modules",
+    track = "go",
+    tag = "Q8",
+    station = "MODULES",
+    name = L("MODULES  -  the repo", "MODULES  -  저장소", "MODULES  -  個 repo"),
+    goal = L(
+      "Split the app into packages and let the Times Square shop import it from GitHub. Paths, go.mod, go get, tags. Ship v1.0.0.",
+      "앱을 패키지로 나누고 타임스퀘어 매장이 GitHub에서 import하게 하라. 경로, go.mod, go get, 태그. v1.0.0을 내라.",
+      "將個 App 拆做 package，等時代廣場間舖可以由 GitHub import。path、go.mod、go get、tag。出 v1.0.0。"
+    ),
+    maps = require "src.data_mod",
+    win = { stamp = "v1.0.0", bg = "bg_lab", title = "mwin_title", head = "mwin_head" },
   },
 }
 
