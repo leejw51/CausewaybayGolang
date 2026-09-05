@@ -17,6 +17,8 @@ import init, { Core } from "./wasm/goset_core.js";
 
 import { Chip } from "./audio/chip";
 import { Assets } from "./engine/assets";
+import { burstPlan, clearPlan, coinPlan } from "./engine/burst";
+import type { Particles } from "./engine/particles";
 import { Input, loveKey, typedText } from "./engine/input";
 import { Layout } from "./engine/layout";
 import { remeasure } from "./engine/text";
@@ -58,6 +60,7 @@ async function boot(): Promise<void> {
   const view = document.querySelector<HTMLCanvasElement>("#view");
   if (!view) throw new Error("missing #view");
   const keys = document.querySelector<HTMLInputElement>("#keys");
+  const fx = document.querySelector<HTMLCanvasElement>("#fx");
   const g = view.getContext("2d", { alpha: false });
   if (!g) return fail(view, "this browser has no 2d canvas");
 
@@ -95,6 +98,27 @@ async function boot(): Promise<void> {
   // every desktop browser have it for the page.
   const canFullscreen = document.fullscreenEnabled === true;
   render.canFullscreen = canFullscreen;
+  // The WebGL effects over the game. three.js is most of the bundle, so it is
+  // a chunk of its own, fetched once the game is up rather than in front of
+  // it; until it lands — and for good, without WebGL — the 2D sparks in
+  // render.fx carry on as before.
+  let particles: Particles | null = null;
+  if (fx) {
+    void import("./engine/particles")
+      .then((m) => {
+        const p = new m.Particles(fx);
+        if (!p.ok) {
+          fx.hidden = true;
+          return;
+        }
+        layout.measure();
+        p.resize(layout);
+        particles = p;
+      })
+      .catch(() => {
+        fx.hidden = true;
+      });
+  }
   const strings = new Strings();
   const input = new Input();
   const chip = new Chip();
@@ -134,6 +158,10 @@ async function boot(): Promise<void> {
 
   // ------------------------------------------------------------ side effects
 
+  /** Where the last burst went off: the coins set out from there. */
+  let lastBurst: [number, number] | null = null;
+  let lastXp = view_.stats.xp;
+
   const handle = (events: CoreEvent[]): void => {
     for (const ev of events) {
       switch (ev.event) {
@@ -142,7 +170,11 @@ async function boot(): Promise<void> {
           break;
         case "burst": {
           const box = ev.at === "scene" ? render.sceneRect() : render.screenRect();
-          render.fx.burst(box.x + box.w * ev.fx, box.y + box.h * ev.fy, ev.n);
+          const bx = box.x + box.w * ev.fx;
+          const by = box.y + box.h * ev.fy;
+          lastBurst = [bx, by];
+          if (particles?.ok) particles.play(burstPlan(bx, by, ev.n));
+          else render.fx.burst(bx, by, ev.n);
           break;
         }
         case "shake":
@@ -158,7 +190,9 @@ async function boot(): Promise<void> {
           break;
         }
         case "fx_big":
+          // The banner and its 2D confetti as before, with fireworks over it.
           render.fx.big(render.sceneRect(), ev.text, ev.perfect);
+          if (particles?.ok) particles.play(clearPlan(render.sceneRect(), ev.perfect));
           break;
         case "fx_quest": {
           const box = render.screenRect();
@@ -202,12 +236,29 @@ async function boot(): Promise<void> {
     }
   };
 
+  /**
+   * XP went up: coins fly from where the answer landed to the counter, and
+   * the counter waits for them before it rolls.
+   */
+  const payOut = (delta: number): void => {
+    const anchor = render.xpAnchor();
+    if (!particles?.ok || !anchor || view_.state !== "play") return;
+    const box = render.sceneRect();
+    const [bx, by] = lastBurst ?? [box.x + box.w * 0.5, box.y + box.h * 0.45];
+    const n = Math.max(6, Math.min(18, Math.round(4 + delta / 4)));
+    const coins = coinPlan(bx, by, anchor[0], anchor[1], n);
+    particles.play(coins.plan);
+    render.awardXp(coins.firstLanding, coins.lastLanding);
+  };
+
   const drain = (): void => {
     const events = JSON.parse(core.events()) as CoreEvent[];
     if (events.length > 0) handle(events);
     if (core.version() !== lastVersion) {
       lastVersion = core.version();
       refresh();
+      if (view_.stats.xp > lastXp) payOut(view_.stats.xp - lastXp);
+      lastXp = view_.stats.xp;
     }
   };
 
@@ -527,7 +578,7 @@ async function boot(): Promise<void> {
     const dt = Math.min(MAX_STEP, Math.max(0, (now - last) / 1000));
     last = now;
 
-    layout.measure();
+    if (layout.measure()) particles?.resize(layout);
     core.set_viewport(layout.vw);
     core.set_held(input.left, input.right);
     core.update(dt);
@@ -541,6 +592,7 @@ async function boot(): Promise<void> {
     // AUTO types on the core's side of the mirror; the field follows it.
     if (keys && !composing && keys.value !== view_.input) syncKeys();
     render.draw(g, view_, core.anim(), strings);
+    particles?.frame(dt);
 
     // The screen the game is on, published on the document so an end-to-end
     // test can see it without reading pixels back off the canvas.

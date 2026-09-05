@@ -52,6 +52,21 @@ body {
   will-change: transform;
 }
 
+/* The effects layer sits exactly over the game — #stage is fixed, so it is
+   the containing block — inside the same safe-area padding, and lets every
+   tap through to the canvas underneath. */
+#fx {
+  position: absolute;
+  top: env(safe-area-inset-top);
+  left: env(safe-area-inset-left);
+  /* Sized explicitly: a canvas is a replaced element, and one left to `auto`
+     takes its own backing-store size rather than stretching to its insets. */
+  width: calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right));
+  height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  display: block;
+  pointer-events: none;
+}
+
 #view {
   display: block;
   width: 100%;

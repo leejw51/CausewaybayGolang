@@ -30,6 +30,9 @@
   <body>
     <div id="stage">
       <canvas id="view"></canvas>
+      <!-- The effects: a transparent WebGL canvas over the game, see
+           engine/particles.ts. It takes no taps; those go to #view. -->
+      <canvas id="fx"></canvas>
     </div>
     <!--
       The soft keyboard's way in. A phone has no keys until something on the

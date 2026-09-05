@@ -173,6 +173,20 @@ export class Renderer {
   private toast: string | null = null;
   private toastT = 0;
 
+  /**
+   * The XP counter on the play screen. What it shows lags what the core has
+   * by however long the coins take to fly: main.ts calls `awardXp` with the
+   * moment they land, and until then the number stands still. Then it rolls
+   * up like a slot machine — an exponential approach, so it spins fast and
+   * settles — and bumps as each shower lands.
+   */
+  private xpShown = -1;
+  private xpHoldUntil = 0;
+  private xpKicks: number[] = [];
+  private xpBump = 0;
+  private xpRolling = false;
+  private xpRect: Rect | null = null;
+
   /** What the last frame saw, so a change of street can reset its animations. */
   private lastStreet = "";
   private lastState = "";
@@ -217,6 +231,22 @@ export class Renderer {
 
   addPop(text: string, kind: PopKind): void {
     this.pops.push({ text, kind, t: 0 });
+  }
+
+  /**
+   * Coins are on their way: hold the counter where it is until the first
+   * lands, `first` seconds from now, and give it a bump then and when the
+   * last one does.
+   */
+  awardXp(first: number, last: number): void {
+    this.xpHoldUntil = Math.max(this.xpHoldUntil, this.t + first);
+    this.xpKicks.push(this.t + first, this.t + last);
+  }
+
+  /** The middle of the XP counter, where coins fly to; null off the play screen. */
+  xpAnchor(): [number, number] | null {
+    const r = this.xpRect;
+    return r ? [r[0] + r[2] * 0.5, r[1] + r[3] * 0.5] : null;
   }
 
   clearPops(): void {
@@ -283,6 +313,28 @@ export class Renderer {
     this.stamp = v.solved ? Math.min(1, this.stamp + dt * 1.4) : 0;
 
     this.pops = this.pops.filter((p) => (p.t += dt) <= popLife(p));
+
+    // The counter: still while the coins are in the air, then a roll.
+    const xp = v.stats.xp;
+    if (this.xpShown < 0 || xp < this.xpShown) this.xpShown = xp;
+    this.xpRolling = false;
+    if (this.t >= this.xpHoldUntil && this.xpShown < xp) {
+      const gap = xp - this.xpShown;
+      // Exponential ease toward the target, but never slower than a steady
+      // tick, so the last few points do not take forever to arrive.
+      const step = Math.max(gap * (1 - Math.exp(-dt * 6)), Math.min(gap, 40 * dt));
+      this.xpShown += step;
+      if (xp - this.xpShown < 0.5) {
+        this.xpShown = xp;
+        this.xpBump = Math.max(this.xpBump, 0.8);
+      }
+      this.xpRolling = true;
+    }
+    while (this.xpKicks.length > 0 && this.xpKicks[0] <= this.t) {
+      this.xpKicks.shift();
+      this.xpBump = 1;
+    }
+    this.xpBump = Math.max(0, this.xpBump - dt * 3.5);
 
     if (v.state === "title" && Math.random() < dt * 10) {
       this.fx.titleSpark(this.W, this.H);
@@ -968,6 +1020,7 @@ export class Renderer {
     g.restore();
 
     this.btn(g, this.hits.share, S.t("share"), v.sheet);
+    this.drawXpCounter(g, shareH);
 
     if (this.toast && this.toastT > 0) {
       const tf = font("small");
@@ -983,6 +1036,46 @@ export class Renderer {
     }
 
     this.drawTerminal(g, v, S);
+  }
+
+  /**
+   * The XP counter under SHARE: a coin and a number. Gold and a size up while
+   * it rolls, with a bump as a shower of coins lands on it.
+   */
+  private drawXpCounter(g: Ctx, shareH: number): void {
+    const f = font("ui");
+    const label = `${Math.floor(this.xpShown)} XP`;
+    const coinH = f.height + 4;
+    const w = width(f, label) + coinH + 30;
+    const h = f.height + 14;
+    const x = this.W - w - 10;
+    const y = this.TOP + 8 + shareH + 6;
+    this.xpRect = [x, y, w, h];
+
+    const bump = expOut(this.xpBump);
+    const sc = 1 + 0.2 * bump;
+    // Grows from its right edge, which is the edge of the screen: inward.
+    g.save();
+    g.translate(x + w, y + h * 0.5);
+    g.scale(sc, sc);
+    g.translate(-(x + w), -(y + h * 0.5));
+    well(g, x, y, w, h, [0.08, 0.06, 0.16, 0.92]);
+    if (bump > 0.01) {
+      // The landing: a wash of gold over the well.
+      fill(g, Theme.coin, x + 4, y + 4, w - 8, h - 8, 0.35 * bump);
+    }
+    const spin = this.xpRolling ? this.t * 14 : this.t * 1.5;
+    g.save();
+    g.translate(x + 10 + coinH * 0.5, y + h * 0.5);
+    g.scale(Math.max(0.15, Math.abs(Math.cos(spin))), 1);
+    g.translate(-(x + 10 + coinH * 0.5), -(y + h * 0.5));
+    drawItem(g, this.art, "ui_coin", x + 10 + coinH * 0.5, y + h * 0.5, coinH, 0);
+    g.restore();
+    g.fillStyle = css(this.xpRolling || bump > 0.3 ? Theme.coin : Theme.cream);
+    // A little shudder while the digits are spinning.
+    const jitter = this.xpRolling ? Math.sin(this.t * 60) * 1.5 : 0;
+    print(g, f, label, x + coinH + 20, y + 7 + jitter);
+    g.restore();
   }
 
   /** The street pips along the top: one per street, CLEAR ones in green. */
