@@ -131,7 +131,36 @@ pub struct Doc {
 
 impl Doc {
     pub fn parse(json: &str) -> Result<Doc, String> {
-        serde_json::from_str(json).map_err(|e| format!("game.json: {e}"))
+        let doc: Doc = serde_json::from_str(json).map_err(|e| format!("game.json: {e}"))?;
+        doc.check()?;
+        Ok(doc)
+    }
+
+    /// The invariants the rest of the crate indexes on without asking.
+    ///
+    /// A document that parses is not yet a game: an empty `tracks` or a quest
+    /// with no streets would take the first draw down with an index panic, and
+    /// a panic in wasm is a dead page with nothing on it. Refusing here means
+    /// the shell shows "the questions did not load", which at least says what
+    /// went wrong.
+    fn check(&self) -> Result<(), String> {
+        if self.tracks.is_empty() {
+            return Err("game.json: no tracks".into());
+        }
+        if self.quests.is_empty() {
+            return Err("game.json: no quests".into());
+        }
+        for q in &self.quests {
+            if q.maps.is_empty() {
+                return Err(format!("game.json: quest {} has no streets", q.tag));
+            }
+            for m in &q.maps {
+                if m.stages.is_empty() {
+                    return Err(format!("game.json: street {} has no blanks", m.id));
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn track_def(&self, id: &str) -> &Track {
@@ -168,6 +197,24 @@ impl Doc {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_document_that_parses_but_cannot_be_played_is_refused() {
+        // Every one of these would otherwise panic on the first draw, and a
+        // panic in wasm is a blank page rather than a message.
+        let base = r#"{"langs":[],"langNames":{},"strings":{},"tr":{},"#;
+        for (tail, why) in [
+            (r#""tracks":[],"quests":[]}"#, "no tracks"),
+            (
+                r#""tracks":[{"id":"go","label":"GO","item":"i","lang":"go"}],"quests":[]}"#,
+                "no quests",
+            ),
+        ] {
+            let err = Doc::parse(&format!("{base}{tail}")).unwrap_err();
+            assert!(err.contains(why), "{err:?} should mention {why:?}");
+        }
+        assert!(Doc::parse("not json").is_err());
+    }
 
     #[test]
     fn a_stage_falls_back_to_the_first_accepted_answer() {

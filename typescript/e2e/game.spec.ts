@@ -39,6 +39,52 @@ test.beforeEach(async ({ page }) => {
   (test.info() as unknown as { _errors: string[] })._errors = errors;
 });
 
+test("ships its security headers, and plays inside them", async ({ page }) => {
+  // public/_headers is only a file until something serves it, and a policy
+  // that is too tight breaks the game in ways only a browser notices. So this
+  // asserts both halves: the header arrives, and nothing violates it while the
+  // game boots, loads its wasm and art, plays a blank and takes an export.
+  const violations: string[] = [];
+  await page.addInitScript(() => {
+    (window as unknown as { __csp: string[] }).__csp = [];
+    document.addEventListener("securitypolicyviolation", (e) => {
+      (window as unknown as { __csp: string[] }).__csp.push(
+        `${e.violatedDirective} blocked ${e.blockedURI}`,
+      );
+    });
+  });
+
+  const response = await page.goto("/");
+  const csp = response?.headers()["content-security-policy"];
+  // Vite's dev server does not serve _headers; Cloudflare does, and
+  // `make e2e-dist` is the run that goes through it.
+  test.skip(!csp, "no CSP here — this is the dev server, not the bundle");
+
+  expect(csp).toContain("default-src 'self'");
+  expect(csp).toContain("object-src 'none'");
+  expect(csp).toContain("frame-ancestors 'none'");
+  // Compiling a wasm module counts as eval, and the rules of the game are one.
+  expect(csp).toContain("'wasm-unsafe-eval'");
+  expect(response?.headers()["x-frame-options"]).toBe("DENY");
+  expect(response?.headers()["x-content-type-options"]).toBe("nosniff");
+
+  await expect(state(page)).toHaveAttribute("data-state", "title", { timeout: 60_000 });
+  await page.keyboard.press("Digit1");
+  const answer = String(((await view(page)).stageData as { answer: string }).answer);
+  await type(page, answer);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("F6");
+  const download = page.waitForEvent("download");
+  await page.keyboard.press("Digit5");
+  await download;
+
+  violations.push(
+    ...(await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp)),
+  );
+  expect(violations).toEqual([]);
+  expect((test.info() as unknown as { _errors: string[] })._errors).toEqual([]);
+});
+
 test("boots to the title card with the questions loaded", async ({ page }) => {
   await boot(page);
   await expect(page.locator("#boot")).toBeHidden();

@@ -623,7 +623,7 @@ function chipsScene(s: Scene): void {
       chipH,
       text,
       on ? (CHIP_FILL[colour] ?? Theme.paper) : Theme.paper,
-      on ? CHIP_INK[colour] : [1, 1, 1, 0.55],
+      on ? (CHIP_INK[colour] ?? Theme.cream) : [1, 1, 1, 0.55],
       "small",
     );
   });
@@ -649,7 +649,9 @@ function chipsScene(s: Scene): void {
 
 /** Draw the scene a street asks for. A street with no scene draws nothing. */
 export function drawViz(s: Scene): void {
-  const named = SCENES[s.map.viz];
+  // hasOwn, not a bare lookup: `viz` comes from the data, and a street named
+  // "constructor" would otherwise find a function on Object.prototype.
+  const named = Object.hasOwn(SCENES, s.map.viz) ? SCENES[s.map.viz] : undefined;
   if (named) {
     named(s);
     return;

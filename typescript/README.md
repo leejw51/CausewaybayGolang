@@ -103,6 +103,30 @@ the wrong content type (streaming instantiation refuses anything but
 `application/wasm`), an asset Vite resolved from source and never copied into
 `dist`, a base path that only works under the dev server.
 
+## What this page can and cannot do
+
+Worth knowing before it goes on the internet, because most of it is a
+consequence of what the game *is* rather than of anything clever:
+
+- **No third-party JavaScript ships.** `dependencies` in `package.json` is
+  empty. Vite bundles this repository's own source and nothing else; every npm
+  package here is a build or test tool. The only other code in the bundle is
+  the wasm, which is Rust with no `unsafe` in it and three well-known crates
+  (serde, serde_json, wasm-bindgen).
+- **Nothing user-supplied is ever rendered as markup.** Every string on screen
+  goes through `ctx.fillText` on a canvas. There is no `innerHTML` anywhere,
+  the page reads no URL parameters, and it sets no cookies.
+- **`public/_headers`** sends a CSP that allows only this origin (plus
+  `wasm-unsafe-eval`, because compiling a wasm module counts as eval, and a
+  `data:` image for the favicon), denies framing, and turns off the device
+  permissions the game never asks for. `make e2e-dist` asserts the header
+  arrives *and* that a full boot, a played blank and an export raise no
+  violation — a policy that breaks the game breaks the build.
+- **The save is not trusted.** A `localStorage` record is a thing the player
+  can edit. The core validates every index in it and normalises the stats, so
+  a hand-written save can unlock nothing and crash nothing; there is a test
+  that feeds it a record from a build that does not exist.
+
 ## Deploying
 
 ```bash

@@ -8,13 +8,19 @@
  */
 
 export class Strings {
-  private table: Record<string, string> = {};
+  private table: Record<string, string> = Object.create(null) as Record<string, string>;
 
   load(json: string): void {
     try {
-      this.table = JSON.parse(json) as Record<string, string>;
+      // Object.create(null), not {}: the table is looked up by key, and a key
+      // like "constructor" or "toString" must miss rather than find something
+      // on Object.prototype and hand back a function to print.
+      this.table = Object.assign(
+        Object.create(null) as Record<string, string>,
+        JSON.parse(json) as Record<string, string>,
+      );
     } catch {
-      this.table = {};
+      this.table = Object.create(null) as Record<string, string>;
     }
   }
 

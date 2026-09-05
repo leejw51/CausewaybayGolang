@@ -31,6 +31,16 @@ describe("the string table", () => {
     expect(s.tf("title_enter", 1)).toBe("title_enter");
   });
 
+  it("does not hand back something off Object.prototype", () => {
+    // The table is a JSON object looked up by key. Without a null prototype,
+    // t("constructor") finds a function and tf() then throws trying to
+    // format it.
+    const s = loaded({ hint: "HINT" });
+    expect(s.t("constructor")).toBe("constructor");
+    expect(s.t("toString")).toBe("toString");
+    expect(s.tf("__proto__", 1)).toBe("__proto__");
+  });
+
   it("survives a table that is not JSON at all", () => {
     const s = new Strings();
     s.load("<!doctype html>");
