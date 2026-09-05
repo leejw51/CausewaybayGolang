@@ -127,6 +127,11 @@ LÖVE, which is what `make lint` runs and what CI runs first:
   works from a numbered TSV: dump the untranslated English strings in a stable
   order, join a numbered translation file back into a patch (`=` means "same
   as the English", for code with nothing to translate).
+- `dump_web.lua` — every quest, street, blank and UI string as one JSON file
+  for the web build in `../typescript`. It reads `src/quests.lua`, the twenty
+  `src/data*.lua` chips and `src/i18n.lua` and encodes them unchanged, so a
+  translated field is still the `{ en, ko, yue }` table this build reads and
+  there is only ever one copy of a question. `make -C ../typescript data`.
 - `grok_image.sh` — one Grok (xAI) image generation to a PNG, the way every
   background and mascot sheet under `assets/` was made. Needs `GROK_API_KEY`.
 

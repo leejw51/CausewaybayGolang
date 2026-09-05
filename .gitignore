@@ -1,3 +1,7 @@
 .DS_Store
 /dist/
 /love2d/build/
+
+# The Playwright MCP browser drops screenshots and console logs wherever it is
+# pointed; none of it belongs in the repository.
+.playwright-mcp/

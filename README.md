@@ -55,6 +55,22 @@ cd love2d
 love .
 ```
 
+**Or play it in a browser.** The same game is ported to the web in
+[`typescript/`](typescript/README.md): the rules are Rust compiled to wasm, the
+shell around them is TypeScript, and Cloudflare Pages serves the lot.
+
+```bash
+make web-start        # http://localhost:5310
+make web-check        # what CI runs for the web build
+make web-deploy       # to Cloudflare Pages
+```
+
+There is still only one copy of every question. `love2d/tools/dump_web.lua`
+dumps `love2d/src` into the JSON the web build downloads, and the Rust suite
+plays all 140 streets against that file — so a blank fixed in
+`love2d/src/data.lua` is fixed in both builds, and a blank that stops working
+fails both suites.
+
 Three tracks, twenty quests, 140 streets. Every map dot is a topic.
 
 **GO** — eight quests:

@@ -1,0 +1,5 @@
+# Defaults, spelled out: the comments in this crate carry the reasoning and
+# rustfmt leaves them alone, so the only thing worth pinning is the width the
+# rest of the repository already reads at.
+max_width = 100
+edition = "2021"
