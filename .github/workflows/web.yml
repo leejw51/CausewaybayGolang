@@ -1,0 +1,103 @@
+# The web build: the Rust rules, the browser-side suite, and a real browser
+# playing the game.
+#
+# The questions are generated from love2d/src rather than committed, so luajit
+# is a build dependency here the same way it is on a laptop. The art is
+# generated too, and it is the slow half of the build; it is cached on the
+# hash of the source images and the tool that shrinks them.
+
+name: web
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+# Nothing here writes to the repository, and a pull request from a fork should
+# not be handed a token that could.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: typescript
+
+jobs:
+  rules:
+    name: cargo test (the rules, headless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: typescript
+
+      - name: Install luajit
+        run: sudo apt-get update && sudo apt-get install -y luajit
+
+      # The suite plays the real questions, so they have to exist first.
+      - run: make data
+
+      - run: make fmt-check
+      - run: make lint
+      - run: make test-rust
+
+  web:
+    name: vitest + playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: typescript
+
+      - name: Install luajit
+        run: sudo apt-get update && sudo apt-get install -y luajit
+
+      # The art is a minute of image processing and changes far less often than
+      # the code does.
+      - name: Cache the shrunken art
+        uses: actions/cache@v4
+        with:
+          path: typescript/public/art
+          key: art-${{ hashFiles('love2d/assets/*.png', 'typescript/crates/mkassets/src/main.rs') }}
+
+      - run: npm ci
+      - run: make data
+      - run: make art
+      - run: make wasm
+
+      - run: npm test
+
+      - name: Install the browser
+        run: npx playwright install --with-deps chromium
+
+      # Against the production bundle served by Cloudflare's own runtime, not
+      # by Vite: it is the only check that sees what actually ships.
+      - run: make e2e-dist
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: typescript/playwright-report
+          retention-days: 7

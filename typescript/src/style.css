@@ -1,0 +1,126 @@
+/*
+ * The page around the canvas, and nothing more.
+ *
+ * Everything the player looks at is drawn by `render.ts`; the document exists
+ * to give that one canvas the whole viewport, on a dark surround so a window
+ * that does not divide evenly into the virtual canvas letterboxes in the
+ * game's own navy rather than in white.
+ */
+
+@font-face {
+  font-family: "PressStart2P";
+  src: url("/fonts/PressStart2P-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "VT323";
+  src: url("/fonts/VT323-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  background: #141c48;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #141c48;
+  /* A tap should never pan the page or fire a double-tap zoom: every gesture
+     belongs to the game. */
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: block;
+  background: #141c48;
+  /* Off the notch and the home indicator: the letterbox is the same navy as
+     the page, so what is inset just reads as more of it. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  box-sizing: border-box;
+  /* main.ts slides the stage up when the soft keyboard covers the prompt. */
+  will-change: transform;
+}
+
+/* The effects layer sits exactly over the game — #stage is fixed, so it is
+   the containing block — inside the same safe-area padding, and lets every
+   tap through to the canvas underneath. */
+#fx {
+  position: absolute;
+  top: env(safe-area-inset-top);
+  left: env(safe-area-inset-left);
+  /* Sized explicitly: a canvas is a replaced element, and one left to `auto`
+     takes its own backing-store size rather than stretching to its insets. */
+  width: calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right));
+  height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  display: block;
+  pointer-events: none;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The canvas backing store is already at device resolution; this stops the
+     browser softening the pixel art when it scales the element. */
+  image-rendering: pixelated;
+  outline: none;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Where the soft keyboard types. Invisible rather than display:none, because
+   a field that is not rendered cannot be focused and so cannot raise a
+   keyboard at all; and on screen rather than off it, because iOS scrolls the
+   page to bring a focused field into view, and a field that is already there
+   gives it no reason to. */
+#keys {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  pointer-events: none;
+  caret-color: transparent;
+  /* 16px or iOS zooms the page in when the field takes focus. */
+  font-size: 16px;
+}
+
+/* Before the wasm and the questions arrive there is nothing on the canvas.
+   A line of type is better than a blank navy rectangle on a slow connection. */
+#boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.75rem;
+  text-align: center;
+  color: #fceec8;
+  font: 14px ui-monospace, "VT323", monospace;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+#boot b {
+  color: #f878a8;
+  font: 18px "PressStart2P", ui-monospace, monospace;
+}
+
+html[data-state] #boot {
+  display: none;
+}

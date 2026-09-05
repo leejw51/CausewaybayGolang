@@ -1,0 +1,45 @@
+# What Cloudflare Pages sends with every response.
+#
+# The game is a static page with no accounts, no cookies and no server side, so
+# none of this is holding a door shut on its own. It is here so that a future
+# mistake — a dependency that starts phoning home, an XSS in something that has
+# not been written yet — fails closed instead of quietly working.
+#
+# `make e2e-dist` runs the whole suite against these headers through
+# Cloudflare's own runtime, so a policy that breaks the game breaks the build.
+
+/*
+  # Everything the page needs comes from the page's own origin. The two
+  # exceptions are spelled out rather than left to `default-src`:
+  #
+  #   wasm-unsafe-eval  compiling a WebAssembly module counts as eval, and the
+  #                     rules of the game are a wasm module.
+  #   img-src data:     the favicon is an inline SVG.
+  #
+  # `style-src` allows inline because the clipboard fallback in game/store.ts
+  # positions a scratch textarea through `element.style`, and there is no
+  # user-controlled markup anywhere for it to protect.
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  # Nobody has any business framing this. Change both of these together if the
+  # game is ever meant to be embedded in someone else's page.
+  X-Frame-Options: DENY
+  # The game asks for none of these, so let the browser refuse on its behalf.
+  Permissions-Policy: accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), microphone=(), midi=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+
+# Vite puts a content hash in the name of everything under /assets, so an old
+# one is never the wrong one and a year is a safe thing to promise.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The art and the questions are generated, not hashed: their names stay the
+# same across deploys. A day is long enough to be worth having and short
+# enough that a fixed question reaches a returning player.
+/art/*
+  Cache-Control: public, max-age=86400
+/data/*
+  Cache-Control: public, max-age=86400
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable

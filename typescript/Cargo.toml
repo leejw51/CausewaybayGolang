@@ -1,0 +1,19 @@
+# The rules of the game are Rust, compiled to wasm; TypeScript is the shell
+# that gives them a canvas, a keyboard, Web Audio and somewhere to save.
+#
+#   crates/goset-core  quests, blanks, answers, XP and the state machine
+#   crates/mkassets    a build tool that shrinks love2d/assets into public/art
+#
+# Two crates, one lock file, so `cargo test` covers the game and the asset
+# pipeline in one command and neither drags the other's dependencies into the
+# wasm binary.
+[workspace]
+resolver = "2"
+members = ["crates/goset-core", "crates/mkassets"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
