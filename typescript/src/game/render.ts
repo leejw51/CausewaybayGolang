@@ -82,6 +82,8 @@ export interface Hits {
   sheetRect: Rect | null;
   hint: Rect | null;
   ok: Rect | null;
+  /** The ENTER mark at the end of the prompt: a tap there submits too. */
+  enter: Rect | null;
   auto: Rect | null;
   prevStage: Rect | null;
   nextStage: Rect | null;
@@ -105,6 +107,7 @@ function emptyHits(): Hits {
     sheetRect: null,
     hint: null,
     ok: null,
+    enter: null,
     auto: null,
     prevStage: null,
     nextStage: null,
@@ -170,6 +173,28 @@ export class Renderer {
   private toast: string | null = null;
   private toastT = 0;
 
+  /**
+   * The XP counter on the play screen. What it shows lags what the core has
+   * by however long the coins take to fly: main.ts calls `awardXp` with the
+   * moment they land, and until then the number stands still. Then it rolls
+   * up like a slot machine — an exponential approach, so it spins fast and
+   * settles — and bumps as each shower lands.
+   */
+  private xpShown = -1;
+  private xpHoldUntil = 0;
+  private xpKicks: number[] = [];
+  private xpBump = 0;
+  private xpRolling = false;
+  private xpRect: Rect | null = null;
+
+  /**
+   * A green "pass" flash on the answer prompt. On a phone the soft keyboard
+   * scrolls the scene off the top, so the burst up there is never seen; this
+   * lights up the prompt, which stays on screen right above the keys.
+   */
+  private passK = 0;
+  private promptR: Rect | null = null;
+
   /** What the last frame saw, so a change of street can reset its animations. */
   private lastStreet = "";
   private lastState = "";
@@ -178,6 +203,12 @@ export class Renderer {
   /** Where the pointer is, in virtual pixels, for the hover lighting. */
   mouse: [number, number] | null = null;
   fullscreen = false;
+  /**
+   * Whether the page can go fullscreen at all. An iPhone cannot, and a FULL
+   * button that does nothing is worse than none — so main.ts turns this off
+   * and the HUD leaves the button out.
+   */
+  canFullscreen = true;
   sound = true;
 
   // Measured every frame in `syncMetrics`.
@@ -185,6 +216,9 @@ export class Renderer {
   private H = 720;
   private PORT = false;
   private TOP = 70;
+  /** The HUD button row: its top and height, for anything laid out beside it. */
+  private HUD_Y = 0;
+  private HUD_H = 36;
   private SCENE_H = 260;
   private TERM_Y = 330;
 
@@ -205,6 +239,34 @@ export class Renderer {
 
   addPop(text: string, kind: PopKind): void {
     this.pops.push({ text, kind, t: 0 });
+  }
+
+  /**
+   * Coins are on their way: hold the counter where it is until the first
+   * lands, `first` seconds from now, and give it a bump then and when the
+   * last one does.
+   */
+  awardXp(first: number, last: number): void {
+    this.xpHoldUntil = Math.max(this.xpHoldUntil, this.t + first);
+    this.xpKicks.push(this.t + first, this.t + last);
+  }
+
+  /** The middle of the XP counter, where coins fly to; null off the play screen. */
+  xpAnchor(): [number, number] | null {
+    const r = this.xpRect;
+    return r ? [r[0] + r[2] * 0.5, r[1] + r[3] * 0.5] : null;
+  }
+
+  /** A correct answer: light up the prompt green for a moment. */
+  flashPass(): void {
+    this.passK = 1;
+  }
+
+  /** The middle of the answer prompt: where the burst goes when the soft
+   *  keyboard has scrolled the scene out of view. Null off the play screen. */
+  promptAnchor(): [number, number] | null {
+    const r = this.promptR;
+    return r ? [r[0] + r[2] * 0.5, r[1] + r[3] * 0.5] : null;
   }
 
   clearPops(): void {
@@ -272,6 +334,29 @@ export class Renderer {
 
     this.pops = this.pops.filter((p) => (p.t += dt) <= popLife(p));
 
+    // The counter: still while the coins are in the air, then a roll.
+    const xp = v.stats.xp;
+    if (this.xpShown < 0 || xp < this.xpShown) this.xpShown = xp;
+    this.xpRolling = false;
+    if (this.t >= this.xpHoldUntil && this.xpShown < xp) {
+      const gap = xp - this.xpShown;
+      // Exponential ease toward the target, but never slower than a steady
+      // tick, so the last few points do not take forever to arrive.
+      const step = Math.max(gap * (1 - Math.exp(-dt * 6)), Math.min(gap, 40 * dt));
+      this.xpShown += step;
+      if (xp - this.xpShown < 0.5) {
+        this.xpShown = xp;
+        this.xpBump = Math.max(this.xpBump, 0.8);
+      }
+      this.xpRolling = true;
+    }
+    while (this.xpKicks.length > 0 && this.xpKicks[0] <= this.t) {
+      this.xpKicks.shift();
+      this.xpBump = 1;
+    }
+    this.xpBump = Math.max(0, this.xpBump - dt * 3.5);
+    this.passK = Math.max(0, this.passK - dt / 1.5);
+
     if (v.state === "title" && Math.random() < dt * 10) {
       this.fx.titleSpark(this.W, this.H);
     }
@@ -321,38 +406,57 @@ export class Renderer {
     this.H = this.layout.vh;
     this.PORT = this.layout.isPortrait();
     ensureFonts(this.layout.uiScale());
+    const touchH = this.layout.minTouchH();
 
+    // A phone turns in the hand, so PORT/LAND is not a choice to offer it;
+    // and where there is no fullscreen API the FULL button has nothing to do.
+    // Leaving them out is also what makes the row fit a 720-wide portrait
+    // canvas once the type has been boosted for a small screen.
+    const showOri = !this.layout.touch;
+    const showFull = this.canFullscreen;
+    const labels = [S.t("hud_map"), S.t("hud_back"), v.langName, "MUTE"];
+    if (showFull) labels.push(S.t("hud_full"), S.t("hud_wind"));
+    if (showOri) labels.push(S.t("hud_port"), S.t("hud_land"));
     const [btnW, btnH] = btnBox(
       font("button"),
-      [
-        S.t("hud_full"),
-        S.t("hud_wind"),
-        S.t("hud_port"),
-        S.t("hud_land"),
-        S.t("hud_map"),
-        S.t("hud_back"),
-        v.langName,
-      ],
-      112,
-      32,
-      36,
+      labels,
+      this.layout.touch ? 0 : 112,
+      this.layout.touch ? 24 : 32,
+      Math.max(36, touchH),
     );
     this.TOP = Math.max(this.PORT ? 80 : 70, font("station").height + 52, btnH + 20);
 
-    const termShare = this.PORT ? 0.52 : 0.55;
+    // On a touch screen the buttons are taller and the type is bigger, and a
+    // phone's browser has already taken a strip off the top; the scene gives
+    // way so the story, the code and the line with the blank in it all stay
+    // on screen.
+    const touch = this.layout.touch;
+    const termShare = this.PORT ? (touch ? 0.6 : 0.52) : touch ? 0.62 : 0.55;
     let sceneH = Math.floor(this.H * (1 - termShare)) - this.TOP;
-    const lo = Math.floor(this.H * (this.PORT ? 0.32 : 0.38));
+    const lo = Math.floor(this.H * (this.PORT ? (touch ? 0.26 : 0.32) : touch ? 0.2 : 0.38));
     const hi = Math.floor(this.H * (this.PORT ? 0.46 : 0.52));
     this.SCENE_H = Math.max(lo, Math.min(hi, sceneH));
     this.TERM_Y = this.TOP + this.SCENE_H;
 
     const y = Math.floor((this.TOP - btnH) * 0.5);
-    const w = btnW;
-    this.hits.hudOri = [this.W - w - 10, y, w, btnH];
-    this.hits.hudFull = [this.W - w * 2 - 20, y, w, btnH];
-    this.hits.hudMap = [this.W - w * 3 - 30, y, w, btnH];
-    this.hits.hudLang = [this.W - w * 4 - 40, y, w, btnH];
-    this.hits.hudSound = [this.W - w * 5 - 50, y, w, btnH];
+    this.HUD_Y = y;
+    this.HUD_H = btnH;
+    // Laid out from the right edge; a button that is left out takes no room
+    // and gets an empty box, which nothing can hit.
+    const none: Rect = [0, 0, 0, 0];
+    let x = this.W - 10;
+    const place = (show: boolean): Rect => {
+      if (!show) return none;
+      x -= btnW;
+      const r: Rect = [x, y, btnW, btnH];
+      x -= 10;
+      return r;
+    };
+    this.hits.hudOri = place(showOri);
+    this.hits.hudFull = place(showFull);
+    this.hits.hudMap = place(true);
+    this.hits.hudLang = place(true);
+    this.hits.hudSound = place(true);
   }
 
   // ----------------------------------------------------------------- draw
@@ -408,6 +512,7 @@ export class Renderer {
   }
 
   private btn(g: Ctx, r: Rect, label: string, lit = false, dim = false): void {
+    if (r[2] <= 0 || r[3] <= 0) return;
     pixBtn(g, font("button"), r[0], r[1], r[2], r[3], label, {
       lit,
       dim,
@@ -434,22 +539,28 @@ export class Renderer {
     const gy = cam.groundY;
     const ch = cam.charH;
     const gap = ch * 0.78;
-    const titleF = font("title");
+    // The title at the size it was drawn for, unless the canvas is too narrow
+    // for it in one piece — a phone with boosted type — when the stamp size
+    // is the next one down that still looks like a sign.
+    const title = "CAUSEWAYBAY GO";
+    let titleF = font("title");
+    if (width(titleF, title) > this.W - 24) titleF = font("stamp");
     const subF = font("subtitle");
     const uiF = font("ui");
     const smF = font("small");
+    const tagline =
+      v.track === "rust" ? "tagline_rust" : v.track === "python" ? "tagline_py" : "tagline";
+    const tagLines = wrap(smF, S.t(tagline), this.W - 24).length;
 
     const ty = this.TOP + lerp(this.PORT ? 4 : 0, this.PORT ? 16 : 8, k);
     // A dark band, so the title reads over the neon signs behind it.
     g.fillStyle = `rgba(5,5,26,${0.62 * k})`;
-    g.fillRect(0, ty - 14, this.W, titleF.height + subF.height + smF.height + 40);
-    neonPrint(g, titleF, "CAUSEWAYBAY GO", ty, this.W, COL.neon, this.t);
+    g.fillRect(0, ty - 14, this.W, titleF.height + subF.height + smF.height * tagLines + 40);
+    neonPrint(g, titleF, title, ty, this.W, COL.neon, this.t);
     g.fillStyle = css(COL.gold, k);
     printf(g, subF, S.t("subtitle"), 0, ty + titleF.height + 6, this.W, "center");
     g.fillStyle = css(COL.cream, k * 0.95);
-    const tagline =
-      v.track === "rust" ? "tagline_rust" : v.track === "python" ? "tagline_py" : "tagline";
-    printf(g, smF, S.t(tagline), 0, ty + titleF.height + subF.height + 12, this.W, "center");
+    printf(g, smF, S.t(tagline), 12, ty + titleF.height + subF.height + 12, this.W - 24, "center");
 
     const hx = lerp(-ch, this.W * 0.18, k);
     const walking = this.intro < 1;
@@ -464,35 +575,30 @@ export class Renderer {
     drawCharacter(g, this.art, "clerk", this.W * 0.78, gy, { t: this.t, facing: -1, h: ch });
     drawItem(g, this.art, "item_set", this.W * 0.88, gy - ch * 0.28, ch * 0.38, Math.sin(this.t) * 0.1);
 
-    const mh = smF.height;
-    const barH = 24 + uiF.height + 6 + mh + 6 + mh + 6 + mh + 6 + mh + 12;
-    panel(g, 12, this.H - barH - 8, this.W - 24, barH, Theme.panel);
+    // The panel along the bottom: five lines, each of which may wrap on a
+    // narrow canvas, so the panel is as tall as they turn out to be.
     const blink = 0.55 + 0.45 * (0.5 + 0.5 * Math.cos(this.t * 3.2));
-    g.fillStyle = css(Theme.ink, blink * k);
-    printf(g, uiF, S.t("title_enter"), 12, this.H - barH + 10, this.W - 24, "center");
-
-    g.fillStyle = css(Theme.brick, 0.95 * k);
     const line2 = v.continueAt
       ? `${v.continueAt.questTag}  ${S.tf("title_continue", v.continueAt.station, v.continueAt.cleared, v.continueAt.total)}`
       : S.t("title_fresh");
-    printf(g, smF, line2, 12, this.H - barH + 12 + uiF.height, this.W - 24, "center");
-
-    g.fillStyle = css(v.track === "rust" ? Theme.brick : Theme.navy, 0.95 * k);
     const line3 = `${S.tf("track_line", v.trackLabel)}   ${S.tf("quest_tab", v.questNumber)}   ${v.questName}`;
-    printf(g, smF, line3, 12, this.H - barH + 12 + uiF.height + mh + 6, this.W - 24, "center");
-
-    g.fillStyle = css(Theme.ink, 0.9 * k);
-    printf(
-      g,
-      smF,
-      S.tf("xp_short", v.stats.level, v.stats.xp, v.stats.badges),
-      12,
-      this.H - barH + 12 + uiF.height + (mh + 6) * 2,
-      this.W - 24,
-      "center",
-    );
-    g.fillStyle = css(Theme.ink, 0.8 * k);
-    printf(g, smF, S.t("title_help"), 12, this.H - 16 - mh, this.W - 24, "center");
+    const lines: Array<[Font, string, RGBA, number]> = [
+      [uiF, S.t("title_enter"), Theme.ink, blink * k],
+      [smF, line2, Theme.brick, 0.95 * k],
+      [smF, line3, v.track === "rust" ? Theme.brick : Theme.navy, 0.95 * k],
+      [smF, S.tf("xp_short", v.stats.level, v.stats.xp, v.stats.badges), Theme.ink, 0.9 * k],
+      [smF, S.t("title_help"), Theme.ink, 0.8 * k],
+    ];
+    const lineW = this.W - 24 - 24;
+    const heights = lines.map(([f, text]) => wrap(f, text, lineW).length * f.height);
+    const barH = 22 + heights.reduce((a, b) => a + b + 6, 0) + 8;
+    panel(g, 12, this.H - barH - 8, this.W - 24, barH, Theme.panel);
+    let ly = this.H - barH + 10;
+    lines.forEach(([f, text, col, alpha], i) => {
+      g.fillStyle = css(col, alpha);
+      printf(g, f, text, 24, ly, lineW, "center");
+      ly += heights[i] + 6;
+    });
   }
 
   // ------------------------------------------------------------- overworld
@@ -513,6 +619,7 @@ export class Renderer {
     return Math.max(
       this.PORT ? 68 : 60,
       font("button").height + font("stationSm").height + BTN_FRAME + 18,
+      this.layout.minTouchH() + 10,
     );
   }
 
@@ -587,16 +694,11 @@ export class Renderer {
     let tabW = 0;
     for (const q of v.questTabs) tabW = Math.max(tabW, width(tabF, q.station) + 24);
     const tabGap = 6;
-    const tabRoom = this.hits.hudLang[0] - 12 - 16;
+    const tabRoom = this.hits.hudSound[0] - 12 - 16;
     const byName = v.questTabs.length * (tabW + tabGap) <= tabRoom;
     if (!byName) tabW = Math.max(56, width(tabF, "Q3") + 24);
     v.questTabs.forEach((q, i) => {
-      const r: Rect = [
-        12 + i * (tabW + tabGap),
-        this.hits.hudFull[1],
-        tabW,
-        this.hits.hudFull[3],
-      ];
+      const r: Rect = [12 + i * (tabW + tabGap), this.HUD_Y, tabW, this.HUD_H];
       this.hits.questTabs.push([r, q.index]);
       this.btn(g, r, byName ? q.station : q.tag, q.lit);
       if (q.cleared === q.total) {
@@ -889,18 +991,24 @@ export class Renderer {
     this.drawWorld(g, v, anim, world.groundY, world.charH, cam);
     g.restore();
 
-    // The street's name plate, top-left of the scene.
+    const [shareW, shareH] = btnBox(
+      font("button"),
+      [S.t("share")],
+      84,
+      24,
+      Math.max(30, this.layout.minTouchH()),
+    );
+    this.hits.share = [this.W - shareW - 10, this.TOP + 8, shareW, shareH];
+
+    // The street's name plate, top-left of the scene, stopping short of SHARE.
     const labelF = font("station");
     const label = S.tf("map_label", v.questTag, v.step + 1, v.stations.length, v.map.title);
-    const lw = Math.min(this.W - 24, width(labelF, label) + 32);
+    const lw = Math.min(this.W - shareW - 32, width(labelF, label) + 32);
     const lh = labelF.height + 16;
     well(g, 10, 8, lw, lh, [0.08, 0.06, 0.16, 0.92]);
     g.fillStyle = css(COL.gold);
-    print(g, labelF, label, 22, 16);
+    clipped(g, 14, 8, lw - 8, lh, () => print(g, labelF, label, 22, 16));
     this.hits.mapBtn = [10, this.TOP + 8, lw, lh];
-
-    const [shareW, shareH] = btnBox(font("button"), [S.t("share")], 84, 24, 30);
-    this.hits.share = [this.W - shareW - 10, this.TOP + 8, shareW, shareH];
 
     if (v.streak >= 2 && !v.solved) {
       const sf = font("station");
@@ -933,6 +1041,7 @@ export class Renderer {
     g.restore();
 
     this.btn(g, this.hits.share, S.t("share"), v.sheet);
+    this.drawXpCounter(g, shareH);
 
     if (this.toast && this.toastT > 0) {
       const tf = font("small");
@@ -950,13 +1059,53 @@ export class Renderer {
     this.drawTerminal(g, v, S);
   }
 
+  /**
+   * The XP counter under SHARE: a coin and a number. Gold and a size up while
+   * it rolls, with a bump as a shower of coins lands on it.
+   */
+  private drawXpCounter(g: Ctx, shareH: number): void {
+    const f = font("ui");
+    const label = `${Math.floor(this.xpShown)} XP`;
+    const coinH = f.height + 4;
+    const w = width(f, label) + coinH + 30;
+    const h = f.height + 14;
+    const x = this.W - w - 10;
+    const y = this.TOP + 8 + shareH + 6;
+    this.xpRect = [x, y, w, h];
+
+    const bump = expOut(this.xpBump);
+    const sc = 1 + 0.2 * bump;
+    // Grows from its right edge, which is the edge of the screen: inward.
+    g.save();
+    g.translate(x + w, y + h * 0.5);
+    g.scale(sc, sc);
+    g.translate(-(x + w), -(y + h * 0.5));
+    well(g, x, y, w, h, [0.08, 0.06, 0.16, 0.92]);
+    if (bump > 0.01) {
+      // The landing: a wash of gold over the well.
+      fill(g, Theme.coin, x + 4, y + 4, w - 8, h - 8, 0.35 * bump);
+    }
+    const spin = this.xpRolling ? this.t * 14 : this.t * 1.5;
+    g.save();
+    g.translate(x + 10 + coinH * 0.5, y + h * 0.5);
+    g.scale(Math.max(0.15, Math.abs(Math.cos(spin))), 1);
+    g.translate(-(x + 10 + coinH * 0.5), -(y + h * 0.5));
+    drawItem(g, this.art, "ui_coin", x + 10 + coinH * 0.5, y + h * 0.5, coinH, 0);
+    g.restore();
+    g.fillStyle = css(this.xpRolling || bump > 0.3 ? Theme.coin : Theme.cream);
+    // A little shudder while the digits are spinning.
+    const jitter = this.xpRolling ? Math.sin(this.t * 60) * 1.5 : 0;
+    print(g, f, label, x + coinH + 20, y + 7 + jitter);
+    g.restore();
+  }
+
   /** The street pips along the top: one per street, CLEAR ones in green. */
   private drawStations(g: Ctx, v: View): void {
     bar(g, 0, 0, this.W, this.TOP);
     let f = font("station");
     const n = v.stations.length;
     let x0 = 28;
-    let x1 = this.hits.hudLang[0] - 16;
+    let x1 = this.hits.hudSound[0] - 16;
     const widest = (ff: Font) =>
       v.stations.reduce((m, s) => Math.max(m, width(ff, s.station)), 0);
     let maxW = widest(f);
@@ -971,12 +1120,22 @@ export class Renderer {
     const labelY = pipY + 16;
     const boxW = Math.max(maxW, 48);
     x0 = Math.max(x0, Math.floor(boxW * 0.5) + 12);
-    x1 = Math.min(x1, this.hits.hudLang[0] - Math.floor(boxW * 0.5) - 12);
+    x1 = Math.min(x1, this.hits.hudSound[0] - Math.floor(boxW * 0.5) - 12);
     span = (x1 - x0) / Math.max(1, n - 1);
     if (showNames && span < maxW + 4) showNames = false;
+    // Without room for every name, the current street's sits at the left edge
+    // and the pips start after it. A phone with boosted type may not have room
+    // for even that: the name drops a size, and then drops out.
+    let nameF: Font | null = null;
     if (!showNames) {
-      // The current street's name sits at the left edge: start the pips after it.
-      x0 = Math.max(x0, 16 + width(font("station"), v.map.station) + 24);
+      const room = x1 - x0 - (n - 1) * 20;
+      for (const f2 of [font("station"), font("stationSm")]) {
+        if (width(f2, v.map.station) + 24 <= room) {
+          nameF = f2;
+          break;
+        }
+      }
+      if (nameF) x0 = Math.max(x0, 16 + width(nameF, v.map.station) + 24);
     }
 
     for (let i = 0; i < n; i++) {
@@ -1004,10 +1163,9 @@ export class Renderer {
         printf(g, f, v.stations[i].station, hitX, labelY, boxW, "center");
       }
     }
-    if (!showNames) {
-      const nf = font("station");
+    if (nameF) {
       g.fillStyle = css(Theme.cream);
-      print(g, nf, v.map.station, 16, Math.floor((this.TOP - nf.height) * 0.5));
+      print(g, nameF, v.map.station, 16, Math.floor((this.TOP - nameF.height) * 0.5));
     }
   }
 
@@ -1142,7 +1300,8 @@ export class Renderer {
     const uiF = font("ui");
     const btnFont = font("button");
 
-    const [btnW, btnH] = btnBox(
+    const touchH = this.layout.minTouchH();
+    let [btnW, btnH] = btnBox(
       btnFont,
       [
         S.t("hint"),
@@ -1155,12 +1314,21 @@ export class Renderer {
       ],
       110,
       28,
-      36,
+      Math.max(36, touchH),
     );
-    const [stepW] = btnBox(btnFont, [S.t("step_prev"), S.t("step_next")], btnW, 24);
-    const helpH = Math.max(helpF.height + 12, btnH + 8);
-    const promptH = font("code").height + 20;
+    let [stepW] = btnBox(btnFont, [S.t("step_prev"), S.t("step_next")], btnW, 24);
     const pad = this.PORT ? 8 : 10;
+    // One row holds all five buttons on a desktop. On a phone, with the type
+    // boosted, it does not: HINT / OK / AUTO take a row of their own and
+    // PREV / NEXT the one under it, each stretched across the width, which
+    // also makes them the size a thumb wants.
+    const oneRow = pad * 2 + btnW * 3 + 20 + stepW * 2 + 10 <= this.W;
+    if (!oneRow) {
+      btnW = Math.floor((this.W - pad * 2 - 20) / 3);
+      stepW = Math.floor((this.W - pad * 2 - 10) / 2);
+    }
+    const helpH = oneRow ? Math.max(helpF.height + 12, btnH + 8) : btnH * 2 + 14;
+    const promptH = Math.max(font("code").height + 20, touchH + 8);
 
     const face = FACE[v.map.portrait] ?? "hero";
     const question = S.t("q_prefix") + v.stageData.question;
@@ -1207,7 +1375,20 @@ export class Renderer {
       const msgLines = v.msg ? wrap(storyF, v.msg, textWGuess).length : 0;
       const need = 20 + nameF.height + 8 + (lines.length + msgLines) * storyF.height + 12;
       faceH = Math.min(88, Math.floor(bodyH * 0.2));
-      storyBoxH = Math.max(faceH + 16, Math.min(Math.floor(bodyH * 0.45), need));
+      // The story gets what it needs, up to what the code block can spare:
+      // a three-line snippet on a phone leaves most of the body for the story,
+      // and a long one takes it back.
+      const codeNeed =
+        12 +
+        uiF.height +
+        v.stageData.code.reduce(
+          (h, l) =>
+            h + Math.max(1, wrap(codeF, l.text, storyW - 28).length) * (codeF.height + 2),
+          0,
+        ) +
+        24;
+      const storyRoom = Math.max(Math.floor(bodyH * 0.45), bodyH - hintH - codeNeed - 12);
+      storyBoxH = Math.max(faceH + 16, Math.min(storyRoom, need));
       const hintY = storyY + storyBoxH + 4;
       codeX = pad;
       codeY = hintY + hintH + (hintH > 0 ? 4 : 0);
@@ -1342,6 +1523,7 @@ export class Renderer {
 
     // The prompt.
     well(g, pad, promptY, this.W - pad * 2, promptH, [0.08, 0.06, 0.14, 1]);
+    this.promptR = [pad, promptY, this.W - pad * 2, promptH];
     const codeHgt = font("code").height;
     const py = promptY + Math.floor((promptH - codeHgt) * 0.5);
     g.fillStyle = css(Theme.coin);
@@ -1358,21 +1540,35 @@ export class Renderer {
       g.fillStyle = css(Theme.cream);
       typed = v.input + caret;
     }
-    clipped(g, pad + 42, promptY, this.W - pad * 2 - 140, promptH, () => {
+    // ENTER at the end of the prompt is a button, not a reminder: on a phone
+    // the soft keyboard's return key is easy to miss, and a tap here submits.
+    const enterW = width(btnFont, "ENTER") + 28;
+    clipped(g, pad + 42, promptY, this.W - pad * 2 - 42 - enterW - 16, promptH, () => {
       print(g, font("code"), typed, pad + 42, py);
     });
     if (!v.solved) {
-      g.fillStyle = css(Theme.coin);
-      printf(g, font("code"), "ENTER", pad, py, this.W - pad * 2 - 14, "right");
+      this.hits.enter = [this.W - pad - 6 - enterW, promptY + 4, enterW, promptH - 8];
+      this.btn(g, this.hits.enter, "ENTER", v.input !== "");
+    }
+
+    // A green wash and a tick over the prompt when the last answer was right —
+    // the one bit of the screen still in view when a phone keyboard is up.
+    if (this.passK > 0) {
+      const a = expOut(this.passK);
+      const ww = this.W - pad * 2 - enterW - 16;
+      fill(g, Theme.admit, pad + 2, promptY + 2, ww, promptH - 4, 0.5 * a);
+      g.fillStyle = css(Theme.cream, a);
+      printf(g, font("code"), "✓ " + S.t("fx_step"), pad, py, ww, "center");
     }
 
     // The buttons.
-    const btnY = this.H - helpH + Math.floor((helpH - btnH) * 0.5);
+    const btnY = this.H - helpH + (oneRow ? Math.floor((helpH - btnH) * 0.5) : 4);
+    const stepY = oneRow ? btnY : btnY + btnH + 6;
     this.hits.hint = [pad, btnY, btnW, btnH];
     this.hits.ok = [pad + btnW + 10, btnY, btnW, btnH];
     this.hits.auto = [pad + (btnW + 10) * 2, btnY, btnW, btnH];
-    this.hits.nextStage = [this.W - pad - stepW, btnY, stepW, btnH];
-    this.hits.prevStage = [this.W - pad - stepW * 2 - 10, btnY, stepW, btnH];
+    this.hits.nextStage = [this.W - pad - stepW, stepY, stepW, btnH];
+    this.hits.prevStage = [this.W - pad - stepW * 2 - 10, stepY, stepW, btnH];
 
     const hintLabel = [S.t("hint"), S.t("answer"), S.t("hide")][v.hintLevel] ?? S.t("hint");
     this.btn(g, this.hits.hint, hintLabel, hintOn);
@@ -1389,7 +1585,7 @@ export class Renderer {
         ? S.t("help_answer")
         : S.t("help_play");
     // The keyboard reminder is the first thing to go when the row is tight.
-    if (width(helpF, help) <= this.hits.prevStage[0] - 12 - helpX) {
+    if (oneRow && width(helpF, help) <= this.hits.prevStage[0] - 12 - helpX) {
       print(g, helpF, help, helpX, this.H - helpH + 4);
     }
     g.restore();
@@ -1498,7 +1694,16 @@ export class Renderer {
       S.t("scope_quest"),
       S.t("scope_track"),
     ];
-    const [btnW, btnH] = btnBox(font("button"), labels, 200, 28, 36);
+    // Eight rows have to fit a phone on its side, so the touch floor is
+    // relaxed here: these are wide buttons, and a wide target forgives a
+    // short one.
+    const [btnW, btnH] = btnBox(
+      font("button"),
+      labels,
+      200,
+      28,
+      Math.max(36, Math.floor(this.layout.minTouchH() * 0.75)),
+    );
     const gap = 6;
     const colW = btnW;
     const pad = 22;

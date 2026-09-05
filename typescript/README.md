@@ -79,9 +79,34 @@ Not the game. The differences are all places where a browser is not a laptop:
   is a thing a desktop window never does.
 - **Typing on a phone.** The game is one canvas and a canvas cannot take
   focus, so a soft keyboard would never appear. A tap while a blank is open
-  focuses a field nobody can see, and what the keyboard puts in it is read out
-  one character at a time — which is also what makes a Korean or Japanese IME
-  work, since only the finished text ever lands.
+  focuses a field nobody can see, which is kept equal to the answer; whatever
+  the keyboard changes it to, the difference is what gets typed. That is the
+  only way backspace works on every phone (iOS reports nothing at all for a
+  backspace on an empty field), and it is what makes a Korean or Japanese IME
+  work, since only the finished text is ever compared. When the keyboard comes
+  up the stage slides up by the height of it, so the prompt and the buttons
+  stay above the keys rather than under them. ENTER at the end of the prompt
+  is a button, because a phone keyboard's return key is easy to miss.
+- **A right answer.** The desktop build throws a few dozen 2D sparks. Here a
+  transparent WebGL canvas (three.js) sits over the game and the core's
+  `burst` and `fx_big` events go to it instead: a flash and a shockwave, a
+  shell of glowing sparks and gold stars with trails behind them, paper
+  tumbling down, and fireworks across the scene when a street goes CLEAR.
+  Then the XP: coins fly from the burst to a counter under SHARE — tossed up
+  out of it, hanging, then whipped into the counter on an exponential
+  ease-in-out with a tail behind each — and the counter, which held still
+  while they were in the air, rolls up like a slot machine as they land.
+  Nothing moves on the CPU — a particle is written once and the vertex shader
+  places it from the clock, easing out exponentially along its reach with
+  gravity on top, and a trail is the same particle drawn at a few earlier
+  moments. three.js
+  is most of the bundle, so it is a chunk of its own fetched after the game is
+  up; without WebGL, or before it lands, the 2D sparks carry on.
+- **Fingers.** On a touch screen the type is boosted until a virtual pixel is
+  worth enough of a real one to read, every button gets a floor of 40 CSS
+  pixels under its height, the play buttons wrap onto two rows when one will
+  not hold them, and FULL and PORT/LAND are left out where the device has no
+  fullscreen or turns by itself.
 
 Everything else — the seven languages, AUTO, the two-tier hint, the combo
 pitch climbing with the streak, the fourteen badges, the three tiers of CLEAR

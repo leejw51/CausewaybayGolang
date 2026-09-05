@@ -17,12 +17,14 @@ import init, { Core } from "./wasm/goset_core.js";
 
 import { Chip } from "./audio/chip";
 import { Assets } from "./engine/assets";
+import { burstPlan, clearPlan, coinPlan } from "./engine/burst";
+import type { Particles } from "./engine/particles";
 import { Input, loveKey, typedText } from "./engine/input";
 import { Layout } from "./engine/layout";
 import { remeasure } from "./engine/text";
 import { inRect, Rect } from "./engine/ui";
 import { renderDisk } from "./game/disk";
-import { Renderer } from "./game/render";
+import { Hits, Renderer } from "./game/render";
 import { Strings } from "./game/strings";
 import { copyText, download, store } from "./game/store";
 import type { CoreEvent, View } from "./game/view";
@@ -58,6 +60,7 @@ async function boot(): Promise<void> {
   const view = document.querySelector<HTMLCanvasElement>("#view");
   if (!view) throw new Error("missing #view");
   const keys = document.querySelector<HTMLInputElement>("#keys");
+  const fx = document.querySelector<HTMLCanvasElement>("#fx");
   const g = view.getContext("2d", { alpha: false });
   if (!g) return fail(view, "this browser has no 2d canvas");
 
@@ -88,8 +91,34 @@ async function boot(): Promise<void> {
   // cache is dropped when they land rather than blocking the boot on them.
   void document.fonts?.ready.then(() => remeasure());
 
-  const layout = new Layout(view);
+  const touch = isTouch();
+  const layout = new Layout(view, touch);
   const render = new Renderer(layout, art);
+  // An iPhone has no fullscreen API for anything but a video; an iPad and
+  // every desktop browser have it for the page.
+  const canFullscreen = document.fullscreenEnabled === true;
+  render.canFullscreen = canFullscreen;
+  // The WebGL effects over the game. three.js is most of the bundle, so it is
+  // a chunk of its own, fetched once the game is up rather than in front of
+  // it; until it lands — and for good, without WebGL — the 2D sparks in
+  // render.fx carry on as before.
+  let particles: Particles | null = null;
+  if (fx) {
+    void import("./engine/particles")
+      .then((m) => {
+        const p = new m.Particles(fx);
+        if (!p.ok) {
+          fx.hidden = true;
+          return;
+        }
+        layout.measure();
+        p.resize(layout);
+        particles = p;
+      })
+      .catch(() => {
+        fx.hidden = true;
+      });
+  }
   const strings = new Strings();
   const input = new Input();
   const chip = new Chip();
@@ -129,6 +158,12 @@ async function boot(): Promise<void> {
 
   // ------------------------------------------------------------ side effects
 
+  /** Where the last burst went off: the coins set out from there. */
+  let lastBurst: [number, number] | null = null;
+  let lastXp = view_.stats.xp;
+  /** True while the soft keyboard covers the scene. */
+  let keyboardUp = false;
+
   const handle = (events: CoreEvent[]): void => {
     for (const ev of events) {
       switch (ev.event) {
@@ -137,7 +172,18 @@ async function boot(): Promise<void> {
           break;
         case "burst": {
           const box = ev.at === "scene" ? render.sceneRect() : render.screenRect();
-          render.fx.burst(box.x + box.w * ev.fx, box.y + box.h * ev.fy, ev.n);
+          let bx = box.x + box.w * ev.fx;
+          let by = box.y + box.h * ev.fy;
+          // On a phone the soft keyboard scrolls the scene off the top, so a
+          // burst up there is unseen. Send it to the prompt, which sits right
+          // above the keys and stays in view.
+          if (keyboardUp) {
+            const at = render.promptAnchor();
+            if (at) [bx, by] = at;
+          }
+          lastBurst = [bx, by];
+          if (particles?.ok) particles.play(burstPlan(bx, by, ev.n));
+          else render.fx.burst(bx, by, ev.n);
           break;
         }
         case "shake":
@@ -153,7 +199,9 @@ async function boot(): Promise<void> {
           break;
         }
         case "fx_big":
+          // The banner and its 2D confetti as before, with fireworks over it.
           render.fx.big(render.sceneRect(), ev.text, ev.perfect);
+          if (particles?.ok) particles.play(clearPlan(render.sceneRect(), ev.perfect));
           break;
         case "fx_quest": {
           const box = render.screenRect();
@@ -197,28 +245,77 @@ async function boot(): Promise<void> {
     }
   };
 
+  /**
+   * XP went up: coins fly from where the answer landed to the counter, and
+   * the counter waits for them before it rolls.
+   */
+  const payOut = (delta: number): void => {
+    // The XP counter is up under SHARE, scrolled off behind the keyboard —
+    // coins flying to it would not be seen, so skip them while it is up.
+    if (keyboardUp) return;
+    const anchor = render.xpAnchor();
+    if (!particles?.ok || !anchor || view_.state !== "play") return;
+    const box = render.sceneRect();
+    const [bx, by] = lastBurst ?? [box.x + box.w * 0.5, box.y + box.h * 0.45];
+    const n = Math.max(6, Math.min(18, Math.round(4 + delta / 4)));
+    const coins = coinPlan(bx, by, anchor[0], anchor[1], n);
+    particles.play(coins.plan);
+    render.awardXp(coins.firstLanding, coins.lastLanding);
+  };
+
   const drain = (): void => {
     const events = JSON.parse(core.events()) as CoreEvent[];
     if (events.length > 0) handle(events);
     if (core.version() !== lastVersion) {
       lastVersion = core.version();
       refresh();
+      if (view_.stats.xp > lastXp) {
+        render.flashPass();
+        payOut(view_.stats.xp - lastXp);
+      }
+      lastXp = view_.stats.xp;
     }
   };
 
   // ------------------------------------------------------------------ input
 
-  // Audio cannot start before a gesture, and any gesture will do.
+  // Audio cannot start before a gesture, and any gesture will do — though
+  // Safari on a phone only counts the end of a touch, not the start.
   const wake = () => chip.ensure();
-  for (const type of ["pointerdown", "keydown", "touchstart"] as const) {
+  for (const type of ["pointerdown", "pointerup", "keydown", "touchstart", "touchend"] as const) {
     window.addEventListener(type, wake, { passive: true });
   }
 
+  const stage = view.parentElement ?? view;
   const toggleFullscreen = (): void => {
-    const stage = view.parentElement ?? view;
+    if (!canFullscreen) return;
     if (!document.fullscreenElement) void stage.requestFullscreen?.().catch(() => {});
     else void document.exitFullscreen().catch(() => {});
   };
+
+  /**
+   * The soft keyboard and the visual viewport.
+   *
+   * When a phone's keyboard comes up the page does not get shorter: the
+   * layout viewport stays the size of the screen and the *visual* viewport
+   * shrinks to the part above the keys. Left alone, that hides the bottom of
+   * the game — the prompt and the buttons, the very things being typed into.
+   * So the stage is slid up by however much is covered, and the scene at the
+   * top goes behind the status bar instead. Sizing the game to the visible
+   * part would be worse: half a phone screen is a landscape shape, and the
+   * whole layout would turn on its side every time a key was pressed.
+   */
+  const vv = window.visualViewport;
+  const fitStage = (): void => {
+    if (!vv) return;
+    const hidden = Math.max(0, Math.round(window.innerHeight - vv.height));
+    keyboardUp = hidden > 80;
+    const shift = Math.round(vv.offsetTop) - hidden;
+    stage.style.transform = shift !== 0 ? `translateY(${shift}px)` : "";
+  };
+  vv?.addEventListener("resize", fitStage);
+  vv?.addEventListener("scroll", fitStage);
+  window.addEventListener("resize", fitStage);
   document.addEventListener("fullscreenchange", () => {
     render.fullscreen = document.fullscreenElement !== null;
   });
@@ -227,16 +324,24 @@ async function boot(): Promise<void> {
    * The soft keyboard.
    *
    * A phone has no keys until something on the page has focus, so tapping the
-   * canvas while a blank is open focuses a field nobody can see. What the
-   * keyboard puts in it is read out one character at a time and the field is
-   * emptied again, which is also what makes an IME work: a Korean or Japanese
-   * keyboard composes into the field and only the finished text arrives here.
+   * canvas while a blank is open focuses a field nobody can see. The field is
+   * kept equal to the answer as the core has it, and whenever the keyboard
+   * changes it the difference is what gets typed: the characters that came
+   * off the end are backspaces, the ones that went on are text.
+   *
+   * Mirroring, rather than emptying the field after every character, is what
+   * makes a phone keyboard work at all. Backspace on an empty field is not an
+   * event in iOS — there is nothing to delete, so nothing is reported — and
+   * on Android it is a `keydown` with no key in it. With the answer in the
+   * field, backspace is a shorter value, and that is always reported. It is
+   * also what makes an IME work: a Korean or Japanese keyboard composes into
+   * the field and the finished text is diffed when the composition ends.
    */
   const typing = (): boolean =>
     view_.state === "play" && !view_.solved && !view_.sheet;
 
   const focusKeys = (): void => {
-    if (!keys || !isTouch()) return;
+    if (!keys || !touch) return;
     if (typing()) {
       if (document.activeElement !== keys) keys.focus({ preventScroll: true });
     } else if (document.activeElement === keys) {
@@ -244,22 +349,51 @@ async function boot(): Promise<void> {
     }
   };
 
-  keys?.addEventListener("input", () => {
-    const text = keys.value;
-    keys.value = "";
-    if (!text) return;
-    for (const ch of text) core.text(ch);
-    drain();
-  });
+  /** What the field held after it was last brought level with the core. */
+  let mirrored = "";
+  let composing = false;
 
-  // A soft keyboard's backspace usually arrives as a deletion rather than as a
-  // keystroke, and the field is always empty so there is nothing to delete.
-  keys?.addEventListener("beforeinput", (ev) => {
-    if ((ev as InputEvent).inputType === "deleteContentBackward") {
-      ev.preventDefault();
-      core.key("backspace");
-      drain();
+  const syncKeys = (): void => {
+    if (!keys || composing) return;
+    mirrored = view_.input;
+    if (keys.value !== mirrored) {
+      keys.value = mirrored;
+      try {
+        keys.setSelectionRange(mirrored.length, mirrored.length);
+      } catch {
+        // A field that is not focused may refuse; the caret does not matter then.
+      }
     }
+  };
+
+  const takeKeys = (): void => {
+    if (!keys || composing) return;
+    const now = keys.value;
+    if (now === mirrored) return;
+    const was = [...mirrored];
+    const is = [...now];
+    let p = 0;
+    while (p < was.length && p < is.length && was[p] === is[p]) p++;
+    for (let i = p; i < was.length; i++) core.key("backspace");
+    for (let i = p; i < is.length; i++) {
+      const ch = is[i];
+      if (ch === "\n" || ch === "\r") core.key("return");
+      else core.text(ch);
+    }
+    mirrored = now;
+    drain();
+    // The core may not have taken everything — a submit empties the answer —
+    // so the field is brought level with it again rather than trusted.
+    syncKeys();
+  };
+
+  keys?.addEventListener("input", takeKeys);
+  keys?.addEventListener("compositionstart", () => {
+    composing = true;
+  });
+  keys?.addEventListener("compositionend", () => {
+    composing = false;
+    takeKeys();
   });
 
   window.addEventListener("keydown", (ev) => {
@@ -307,6 +441,7 @@ async function boot(): Promise<void> {
       }
     }
     drain();
+    syncKeys();
     focusKeys();
   });
 
@@ -323,7 +458,11 @@ async function boot(): Promise<void> {
     render.mouse = null;
   });
   view.addEventListener("contextmenu", (ev) => ev.preventDefault());
-  view.addEventListener("dblclick", toggleFullscreen);
+  view.addEventListener("dblclick", (ev) => {
+    // Two quick taps on a phone are two taps, not a request for fullscreen.
+    if (!touch) toggleFullscreen();
+    ev.preventDefault();
+  });
 
   const clickAt = (vx: number, vy: number): void => {
     const hits = render.hits;
@@ -391,6 +530,7 @@ async function boot(): Promise<void> {
       [hits.auto, "auto"],
       [hits.hint, "hint"],
       [hits.ok, v.solved ? "next" : "ok"],
+      [hits.enter, "ok"],
       [hits.prevStage, "prev_stage"],
       [hits.nextStage, "next_stage"],
     ];
@@ -411,20 +551,40 @@ async function boot(): Promise<void> {
     const at = layout.toVirtual(ev.clientX, ev.clientY);
     if (!at) return;
     render.mouse = at;
+    // Also keeps a tap on the canvas from taking focus off the hidden field,
+    // which would put the keyboard away between one letter and the next.
     ev.preventDefault();
     clickAt(at[0], at[1]);
     drain();
-    // A tap is the gesture that may raise the keyboard, and it has to happen
-    // inside the handler or the browser will not treat it as user-initiated.
-    focusKeys();
+    syncKeys();
   });
+
+  // A tap is the gesture that may raise the keyboard, and it has to happen
+  // inside the handler or the browser will not treat it as user-initiated.
+  // Safari on iOS counts the end of the touch and not the start, so this is
+  // on pointerup, with click behind it for a browser that swallows the one.
+  view.addEventListener("pointerup", (ev) => {
+    focusKeys();
+    // A finger is not hovering over the button it just lifted from.
+    if (ev.pointerType !== "mouse") render.mouse = null;
+  });
+  view.addEventListener("click", focusKeys);
 
   // ------------------------------------------------------------- the frame
 
   // Deliberately public: the end-to-end suite asks the game what it thinks is
   // happening rather than reading pixels back off the canvas, and the dev
   // tools console is the other place this earns its keep.
-  (window as unknown as { __view: () => string }).__view = () => core.view();
+  const debug = window as unknown as {
+    __view: () => string;
+    __hits: () => Hits;
+    __toClient: (r: Rect) => [number, number];
+  };
+  debug.__view = () => core.view();
+  // The hit boxes, and the middle of one in window coordinates: how a test
+  // taps a button it cannot see without knowing where the renderer put it.
+  debug.__hits = () => render.hits;
+  debug.__toClient = (r) => layout.toClient(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
 
   document.documentElement.dataset.state = view_.state;
   let lastShownState = view_.state;
@@ -434,7 +594,7 @@ async function boot(): Promise<void> {
     const dt = Math.min(MAX_STEP, Math.max(0, (now - last) / 1000));
     last = now;
 
-    layout.measure();
+    if (layout.measure()) particles?.resize(layout);
     core.set_viewport(layout.vw);
     core.set_held(input.left, input.right);
     core.update(dt);
@@ -445,7 +605,10 @@ async function boot(): Promise<void> {
       lastShownState = view_.state;
       focusKeys();
     }
+    // AUTO types on the core's side of the mirror; the field follows it.
+    if (keys && !composing && keys.value !== view_.input) syncKeys();
     render.draw(g, view_, core.anim(), strings);
+    particles?.frame(dt);
 
     // The screen the game is on, published on the document so an end-to-end
     // test can see it without reading pixels back off the canvas.

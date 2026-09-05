@@ -2,9 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      interactive-widget=overlays-content: the soft keyboard is to cover the
+      page, not shrink it. Safari does that anyway; this makes Chrome on
+      Android do the same, so main.ts has one case to handle rather than two.
+    -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=overlays-content"
     />
     <meta name="theme-color" content="#141c48" />
     <meta
@@ -25,22 +30,29 @@
   <body>
     <div id="stage">
       <canvas id="view"></canvas>
-      <!--
-        The soft keyboard's way in. A phone has no keys until something on the
-        page is focused, and the answer to a blank is typed. This field is
-        never seen and never holds anything: `main.ts` takes each character out
-        of it, hands it to the game and empties it again.
-      -->
-      <input
-        id="keys"
-        type="text"
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="none"
-        spellcheck="false"
-        aria-label="type the answer"
-      />
+      <!-- The effects: a transparent WebGL canvas over the game, see
+           engine/particles.ts. It takes no taps; those go to #view. -->
+      <canvas id="fx"></canvas>
     </div>
+    <!--
+      The soft keyboard's way in. A phone has no keys until something on the
+      page is focused, and the answer to a blank is typed. This field is never
+      seen: `main.ts` keeps it equal to the answer and types the difference
+      whenever the keyboard changes it. It sits outside #stage, pinned to the
+      top of the screen, so that when the stage slides up to clear the
+      keyboard the focused field stays where the browser can see it and has
+      no reason to scroll the page after it.
+    -->
+    <input
+      id="keys"
+      type="text"
+      autocomplete="off"
+      autocorrect="off"
+      autocapitalize="none"
+      spellcheck="false"
+      enterkeyhint="go"
+      aria-label="type the answer"
+    />
     <div id="boot">
       <b>CAUSEWAYBAY GO</b>
       <span>Causeway Bay &middot; loading the morning set</span>

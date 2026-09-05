@@ -16,6 +16,18 @@ import { Theme } from "./theme";
 /** How far past the design size the canvas may grow before it letterboxes. */
 const MAX_STRETCH = 1.5;
 
+/**
+ * On a touch screen, how many CSS pixels a virtual pixel should be worth
+ * before the type is scaled up to compensate. A phone fits the 720-wide
+ * portrait design into 390 CSS pixels — every virtual pixel is half a real
+ * one — and 16px Press Start 2P at that size is eight pixels tall.
+ */
+const TOUCH_READABLE = 0.8;
+/** The most the type is boosted by; past this the panels stop fitting. */
+const TOUCH_BOOST_MAX = 1.5;
+/** The smallest thing a finger can be expected to hit, in CSS pixels. */
+const TOUCH_TARGET = 40;
+
 export type Orientation = "landscape" | "portrait";
 
 export class Layout {
@@ -25,6 +37,8 @@ export class Layout {
   vh = Theme.landH;
   /** Device pixels per virtual pixel. */
   scale = 1;
+  /** CSS pixels per virtual pixel: how big things are to a finger or an eye. */
+  cssScale = 1;
   /** Where the virtual canvas sits inside the window, in device pixels. */
   ox = 0;
   oy = 0;
@@ -42,7 +56,16 @@ export class Layout {
    */
   private pinned = false;
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
+  /**
+   * @param touch whether this is a screen that is tapped rather than clicked.
+   * A phone is held closer and hit with a finger, so type is boosted and
+   * buttons get a floor under their height; a small desktop window gets
+   * neither, because it can always be made bigger.
+   */
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    readonly touch = false,
+  ) {
     if (window.innerHeight > window.innerWidth) this.mode = "portrait";
   }
 
@@ -75,7 +98,25 @@ export class Layout {
    */
   uiScale(): number {
     const [bw, bh] = this.base();
-    return Math.max(1, Math.min(this.vw / bw, this.vh / bh));
+    return Math.max(1, Math.min(this.vw / bw, this.vh / bh)) * this.touchBoost();
+  }
+
+  /**
+   * How much bigger than designed the type is on a touch screen, so that it
+   * stays readable when the canvas is squeezed into a phone. 1 on anything
+   * that is not touched, and on a tablet, where the fit is already close.
+   */
+  touchBoost(): number {
+    if (!this.touch) return 1;
+    return Math.min(TOUCH_BOOST_MAX, Math.max(1, TOUCH_READABLE / this.cssScale));
+  }
+
+  /**
+   * The least tall a button may be, in virtual pixels, so a finger can land
+   * on it. Zero where there are no fingers.
+   */
+  minTouchH(): number {
+    return this.touch ? Math.ceil(TOUCH_TARGET / this.cssScale) : 0;
   }
 
   /**
@@ -86,21 +127,38 @@ export class Layout {
     // Capped at 2: a phone at devicePixelRatio 3 would otherwise render nine
     // times the pixels for a difference nobody can see on pixel art.
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const ww = Math.max(1, Math.round(this.canvas.clientWidth * dpr));
-    const wh = Math.max(1, Math.round(this.canvas.clientHeight * dpr));
+    const cw = Math.max(1, this.canvas.clientWidth);
+    const ch = Math.max(1, this.canvas.clientHeight);
+    const ww = Math.max(1, Math.round(cw * dpr));
+    const wh = Math.max(1, Math.round(ch * dpr));
     // A phone that was turned on its side, or a window dragged into a new
     // shape: follow it, unless the player has said which way they want it.
     if (!this.pinned) this.mode = wh > ww ? "portrait" : "landscape";
     const [bw, bh] = this.base();
 
-    const fit = Math.min(ww / bw, wh / bh);
-    const scale = fit >= 2 ? Math.floor(fit) : fit >= 1 ? 1 : Math.max(0.35, fit);
+    // The fit is worked out in CSS pixels, not device pixels: a Retina
+    // display has twice the pixels but is not twice as big, and a layout that
+    // counted them would draw everything at half size and then letterbox it.
+    // The device scale is that fit with the pixel ratio put back.
+    const fit = Math.min(cw / bw, ch / bh);
+    const cssScale = fit >= 2 ? Math.floor(fit) : fit >= 1 ? 1 : Math.max(0.35, fit);
+    const scale = cssScale * dpr;
     const vw = Math.min(Math.floor(ww / scale), Math.floor(bw * MAX_STRETCH));
     const vh = Math.min(Math.floor(wh / scale), Math.floor(bh * MAX_STRETCH));
 
+    // The backing store is compared too, not just the last measurement: a
+    // window that happens to be exactly the design size matches the defaults
+    // on the first frame, and the canvas would stay at its own 300x150.
     const changed =
-      scale !== this.scale || vw !== this.vw || vh !== this.vh || ww !== this.dw || wh !== this.dh;
+      scale !== this.scale ||
+      vw !== this.vw ||
+      vh !== this.vh ||
+      ww !== this.dw ||
+      wh !== this.dh ||
+      this.canvas.width !== ww ||
+      this.canvas.height !== wh;
     this.scale = scale;
+    this.cssScale = cssScale;
     this.vw = vw;
     this.vh = vh;
     this.dw = ww;
@@ -124,6 +182,13 @@ export class Layout {
 
   /** A pointer position in window coordinates, in virtual ones, or null when
    *  it landed on the letterbox rather than on the game. */
+  /** The inverse: a virtual point, in window coordinates. */
+  toClient(vx: number, vy: number): [number, number] {
+    const rect = this.canvas.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    return [(vx * this.scale + this.ox) / dpr + rect.left, (vy * this.scale + this.oy) / dpr + rect.top];
+  }
+
   toVirtual(clientX: number, clientY: number): [number, number] | null {
     const rect = this.canvas.getBoundingClientRect();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
