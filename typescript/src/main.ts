@@ -161,6 +161,8 @@ async function boot(): Promise<void> {
   /** Where the last burst went off: the coins set out from there. */
   let lastBurst: [number, number] | null = null;
   let lastXp = view_.stats.xp;
+  /** True while the soft keyboard covers the scene. */
+  let keyboardUp = false;
 
   const handle = (events: CoreEvent[]): void => {
     for (const ev of events) {
@@ -170,8 +172,15 @@ async function boot(): Promise<void> {
           break;
         case "burst": {
           const box = ev.at === "scene" ? render.sceneRect() : render.screenRect();
-          const bx = box.x + box.w * ev.fx;
-          const by = box.y + box.h * ev.fy;
+          let bx = box.x + box.w * ev.fx;
+          let by = box.y + box.h * ev.fy;
+          // On a phone the soft keyboard scrolls the scene off the top, so a
+          // burst up there is unseen. Send it to the prompt, which sits right
+          // above the keys and stays in view.
+          if (keyboardUp) {
+            const at = render.promptAnchor();
+            if (at) [bx, by] = at;
+          }
           lastBurst = [bx, by];
           if (particles?.ok) particles.play(burstPlan(bx, by, ev.n));
           else render.fx.burst(bx, by, ev.n);
@@ -241,6 +250,9 @@ async function boot(): Promise<void> {
    * the counter waits for them before it rolls.
    */
   const payOut = (delta: number): void => {
+    // The XP counter is up under SHARE, scrolled off behind the keyboard —
+    // coins flying to it would not be seen, so skip them while it is up.
+    if (keyboardUp) return;
     const anchor = render.xpAnchor();
     if (!particles?.ok || !anchor || view_.state !== "play") return;
     const box = render.sceneRect();
@@ -257,7 +269,10 @@ async function boot(): Promise<void> {
     if (core.version() !== lastVersion) {
       lastVersion = core.version();
       refresh();
-      if (view_.stats.xp > lastXp) payOut(view_.stats.xp - lastXp);
+      if (view_.stats.xp > lastXp) {
+        render.flashPass();
+        payOut(view_.stats.xp - lastXp);
+      }
       lastXp = view_.stats.xp;
     }
   };
@@ -294,6 +309,7 @@ async function boot(): Promise<void> {
   const fitStage = (): void => {
     if (!vv) return;
     const hidden = Math.max(0, Math.round(window.innerHeight - vv.height));
+    keyboardUp = hidden > 80;
     const shift = Math.round(vv.offsetTop) - hidden;
     stage.style.transform = shift !== 0 ? `translateY(${shift}px)` : "";
   };

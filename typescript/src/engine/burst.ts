@@ -105,13 +105,13 @@ export function burstPlan(x: number, y: number, n: number, rng: Rng = Math.rando
     const reach = between(rng, 70, 230) * Math.sqrt(k);
     particles.push(
       thrown(x, y, Math.cos(ang) * reach, Math.sin(ang) * reach - 40 * k, {
-        life: between(rng, 0.7, 1.3),
-        delay: rng() * 0.05,
+        life: between(rng, 1.1, 1.9),
+        delay: rng() * 0.06,
         size: between(rng, 5, 12),
         color: pick(rng, SPARK),
         shape: 0,
         trail: true,
-        gravity: 180,
+        gravity: 150,
         seed: rng(),
       }),
     );
@@ -124,13 +124,13 @@ export function burstPlan(x: number, y: number, n: number, rng: Rng = Math.rando
     const reach = between(rng, 120, 300) * Math.sqrt(k);
     particles.push(
       thrown(x, y, Math.cos(ang) * reach, Math.sin(ang) * reach - 60 * k, {
-        life: between(rng, 0.9, 1.5),
-        delay: rng() * 0.08,
+        life: between(rng, 1.4, 2.2),
+        delay: rng() * 0.1,
         size: between(rng, 14, 26),
         color: pick(rng, GOLD),
         shape: 1,
         trail: true,
-        gravity: 120,
+        gravity: 90,
         seed: rng(),
       }),
     );
@@ -143,23 +143,23 @@ export function burstPlan(x: number, y: number, n: number, rng: Rng = Math.rando
     const reach = between(rng, 90, 320) * Math.sqrt(k);
     particles.push(
       thrown(x, y, Math.cos(ang) * reach, Math.sin(ang) * reach, {
-        life: between(rng, 1.3, 2.1),
-        delay: rng() * 0.1,
+        life: between(rng, 1.9, 2.9),
+        delay: rng() * 0.12,
         size: between(rng, 9, 16),
         color: pick(rng, PAPER),
         shape: 2,
         trail: false,
-        gravity: 300,
+        gravity: 220,
         seed: rng(),
       }),
     );
   }
 
   // A flash of light where it happened, and a shockwave out of it.
-  rings.push({ x, y, radius: 90 * Math.sqrt(k), life: 0.35, delay: 0, color: Theme.cream, glow: true });
-  rings.push({ x, y, radius: 150 * Math.sqrt(k), life: 0.55, delay: 0, color: Theme.coin, glow: false });
+  rings.push({ x, y, radius: 90 * Math.sqrt(k), life: 0.5, delay: 0, color: Theme.cream, glow: true });
+  rings.push({ x, y, radius: 150 * Math.sqrt(k), life: 0.8, delay: 0, color: Theme.coin, glow: false });
   if (k > 1.4) {
-    rings.push({ x, y, radius: 210 * Math.sqrt(k), life: 0.7, delay: 0.1, color: Theme.pink, glow: false });
+    rings.push({ x, y, radius: 210 * Math.sqrt(k), life: 1.0, delay: 0.15, color: Theme.pink, glow: false });
   }
 
   return { particles, rings };
@@ -217,8 +217,8 @@ export function clearPlan(
 }
 
 /** Seconds a coin is in the air, and the most a shower is spread over. */
-export const COIN_FLIGHT = 0.85;
-export const COIN_SPREAD = 0.35;
+export const COIN_FLIGHT = 1.15;
+export const COIN_SPREAD = 0.5;
 
 /**
  * Coins from where the answer landed to the counter: each is tossed a little

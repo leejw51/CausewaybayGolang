@@ -187,6 +187,14 @@ export class Renderer {
   private xpRolling = false;
   private xpRect: Rect | null = null;
 
+  /**
+   * A green "pass" flash on the answer prompt. On a phone the soft keyboard
+   * scrolls the scene off the top, so the burst up there is never seen; this
+   * lights up the prompt, which stays on screen right above the keys.
+   */
+  private passK = 0;
+  private promptR: Rect | null = null;
+
   /** What the last frame saw, so a change of street can reset its animations. */
   private lastStreet = "";
   private lastState = "";
@@ -246,6 +254,18 @@ export class Renderer {
   /** The middle of the XP counter, where coins fly to; null off the play screen. */
   xpAnchor(): [number, number] | null {
     const r = this.xpRect;
+    return r ? [r[0] + r[2] * 0.5, r[1] + r[3] * 0.5] : null;
+  }
+
+  /** A correct answer: light up the prompt green for a moment. */
+  flashPass(): void {
+    this.passK = 1;
+  }
+
+  /** The middle of the answer prompt: where the burst goes when the soft
+   *  keyboard has scrolled the scene out of view. Null off the play screen. */
+  promptAnchor(): [number, number] | null {
+    const r = this.promptR;
     return r ? [r[0] + r[2] * 0.5, r[1] + r[3] * 0.5] : null;
   }
 
@@ -335,6 +355,7 @@ export class Renderer {
       this.xpBump = 1;
     }
     this.xpBump = Math.max(0, this.xpBump - dt * 3.5);
+    this.passK = Math.max(0, this.passK - dt / 1.5);
 
     if (v.state === "title" && Math.random() < dt * 10) {
       this.fx.titleSpark(this.W, this.H);
@@ -1502,6 +1523,7 @@ export class Renderer {
 
     // The prompt.
     well(g, pad, promptY, this.W - pad * 2, promptH, [0.08, 0.06, 0.14, 1]);
+    this.promptR = [pad, promptY, this.W - pad * 2, promptH];
     const codeHgt = font("code").height;
     const py = promptY + Math.floor((promptH - codeHgt) * 0.5);
     g.fillStyle = css(Theme.coin);
@@ -1527,6 +1549,16 @@ export class Renderer {
     if (!v.solved) {
       this.hits.enter = [this.W - pad - 6 - enterW, promptY + 4, enterW, promptH - 8];
       this.btn(g, this.hits.enter, "ENTER", v.input !== "");
+    }
+
+    // A green wash and a tick over the prompt when the last answer was right —
+    // the one bit of the screen still in view when a phone keyboard is up.
+    if (this.passK > 0) {
+      const a = expOut(this.passK);
+      const ww = this.W - pad * 2 - enterW - 16;
+      fill(g, Theme.admit, pad + 2, promptY + 2, ww, promptH - 4, 0.5 * a);
+      g.fillStyle = css(Theme.cream, a);
+      printf(g, font("code"), "✓ " + S.t("fx_step"), pad, py, ww, "center");
     }
 
     // The buttons.
