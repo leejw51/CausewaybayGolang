@@ -253,11 +253,25 @@ test("the window can be resized without anything falling over", async ({ page })
   expect((test.info() as unknown as { _errors: string[] })._errors).toEqual([]);
 });
 
+/** The middle of one of the renderer's hit boxes, in page coordinates. */
+async function hit(page: Page, name: string): Promise<{ x: number; y: number }> {
+  const [x, y] = await page.evaluate((n) => {
+    const w = window as never as {
+      __hits: () => Record<string, number[] | null>;
+      __toClient: (r: number[]) => [number, number];
+    };
+    const r = w.__hits()[n];
+    if (!r) throw new Error(`no hit box called ${n}`);
+    return w.__toClient(r);
+  }, name);
+  return { x, y };
+}
+
 test.describe("on a phone", () => {
   // A soft keyboard only exists once something on the page has focus, and the
   // whole game is one canvas — which cannot take any. So a tap while a blank
-  // is open focuses a field nobody can see, and what the keyboard puts in it
-  // is handed to the game one character at a time.
+  // is open focuses a field nobody can see, and the field is kept equal to
+  // the answer: whatever the keyboard changes it to, the difference is typed.
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 414, height: 896 } });
 
   test("turns itself on its side and lets a tap raise the keyboard", async ({ page }) => {
@@ -282,6 +296,69 @@ test.describe("on a phone", () => {
     const v = await view(page);
     expect(v.stage).toBe(1);
     expect(v.msgKind).toBe("ok");
+    // The field follows the core: a submitted answer leaves it empty.
+    expect(await page.locator("#keys").inputValue()).toBe("");
+  });
+
+  test("takes backspace as a shorter field, and ENTER as a tap", async ({ page }) => {
+    // iOS reports nothing at all for backspace on an empty field, and Android
+    // reports a keydown with no key in it; the only thing every soft keyboard
+    // reports is the field getting shorter. And a phone keyboard's return key
+    // is easy to miss, so ENTER on the canvas is a button.
+    await boot(page);
+    await page.keyboard.press("Digit1");
+    await page.locator("#view").tap({ position: { x: 200, y: 700 } });
+    const keys = page.locator("#keys");
+    await expect(keys).toBeFocused();
+
+    await keys.pressSequentially("xyz");
+    expect((await view(page)).input).toBe("xyz");
+    await keys.evaluate((e: HTMLInputElement) => {
+      e.value = e.value.slice(0, -1);
+      e.dispatchEvent(new InputEvent("input", { inputType: "deleteContentBackward", bubbles: true }));
+    });
+    expect((await view(page)).input).toBe("xy");
+    // A word replaced wholesale, which is what autocorrect does.
+    const answer = String(((await view(page)).stageData as { answer: string }).answer);
+    await keys.evaluate((e: HTMLInputElement, a) => {
+      e.value = a;
+      e.dispatchEvent(new InputEvent("input", { inputType: "insertText", bubbles: true }));
+    }, answer);
+    expect((await view(page)).input).toBe(answer);
+
+    const enter = await hit(page, "enter");
+    await page.locator("#view").tap({ position: enter });
+    const v = await view(page);
+    expect(v.stage).toBe(1);
+    expect(v.msgKind).toBe("ok");
+  });
+
+  test("has buttons a finger can hit", async ({ page }) => {
+    await boot(page);
+    await page.keyboard.press("Digit1");
+    await expect(state(page)).toHaveAttribute("data-state", "play");
+    // Every button on the play screen is at least 40 CSS pixels tall, and the
+    // PORT/LAND button is not there at all: a phone turns by itself.
+    const sizes = await page.evaluate(() => {
+      const w = window as never as {
+        __hits: () => Record<string, number[] | null>;
+        __toClient: (r: number[]) => [number, number];
+      };
+      const h = w.__hits();
+      const out: Record<string, number> = {};
+      for (const name of ["hint", "ok", "auto", "enter", "share", "hudMap", "hudLang", "hudOri"]) {
+        const r = h[name];
+        if (!r) continue;
+        const [, top] = w.__toClient([r[0], r[1], 0, 0]);
+        const [, bottom] = w.__toClient([r[0], r[1] + r[3], 0, 0]);
+        out[name] = bottom - top;
+      }
+      return out;
+    });
+    for (const name of ["hint", "ok", "auto", "enter", "share", "hudMap", "hudLang"]) {
+      expect(sizes[name], name).toBeGreaterThanOrEqual(40);
+    }
+    expect(sizes.hudOri).toBe(0);
   });
 
   test("takes the keyboard away again when there is nothing to type into", async ({ page }) => {

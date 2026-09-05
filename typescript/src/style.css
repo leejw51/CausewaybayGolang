@@ -43,6 +43,13 @@ body {
   inset: 0;
   display: block;
   background: #141c48;
+  /* Off the notch and the home indicator: the letterbox is the same navy as
+     the page, so what is inset just reads as more of it. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  box-sizing: border-box;
+  /* main.ts slides the stage up when the soft keyboard covers the prompt. */
+  will-change: transform;
 }
 
 #view {
@@ -59,18 +66,22 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Where the soft keyboard types. Off screen rather than display:none, because
+/* Where the soft keyboard types. Invisible rather than display:none, because
    a field that is not rendered cannot be focused and so cannot raise a
-   keyboard at all. */
+   keyboard at all; and on screen rather than off it, because iOS scrolls the
+   page to bring a focused field into view, and a field that is already there
+   gives it no reason to. */
 #keys {
   position: fixed;
-  left: -100vw;
+  left: 0;
   top: 0;
   width: 1px;
   height: 1px;
   opacity: 0;
   border: 0;
   padding: 0;
+  pointer-events: none;
+  caret-color: transparent;
   /* 16px or iOS zooms the page in when the field takes focus. */
   font-size: 16px;
 }

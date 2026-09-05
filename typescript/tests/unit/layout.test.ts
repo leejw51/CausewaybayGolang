@@ -38,6 +38,17 @@ describe("the virtual canvas", () => {
     expect([l.ox, l.oy]).toEqual([0, 0]);
   });
 
+  it("sizes the backing store even when nothing else has changed", () => {
+    // Exactly the design size at 1x matches the layout's defaults, so the
+    // first measure used to say "no change" and leave the canvas at 300x150.
+    const canvas = canvasOf(1280, 720);
+    Object.defineProperty(window, "devicePixelRatio", { value: 1, configurable: true });
+    const l = new Layout(canvas);
+    expect(l.measure()).toBe(true);
+    expect([canvas.width, canvas.height]).toEqual([1280, 720]);
+    expect(l.measure()).toBe(false);
+  });
+
   it("scales by a whole number once the window is twice the design size", () => {
     const l = at(2560, 1440);
     expect(l.scale).toBe(2);
@@ -106,6 +117,63 @@ describe("the virtual canvas", () => {
     expect(l.dw).toBe(800);
     expect(l.dh).toBe(1600);
   });
+
+  it("fits in CSS pixels, so a Retina display is not drawn at half size", () => {
+    // A 1440x900 Mac at 2x has 2880 device pixels across, but is not twice
+    // as big: the game should be the design size, drawn sharp, not a 1280
+    // layout at half scale with a letterbox around it.
+    const l = at(1440, 900, 2, "landscape");
+    expect(l.cssScale).toBe(1);
+    expect(l.scale).toBe(2);
+    expect([l.vw, l.vh]).toEqual([1440, 900]);
+    expect([l.ox, l.oy]).toEqual([0, 0]);
+  });
+
+  it("fills a tablet rather than letterboxing a half-size canvas in it", () => {
+    // An iPad in portrait: 810x1080 CSS pixels at 2x. The old device-pixel
+    // fit called that 1.69x the design, rounded to 1, and drew a 1080x1920
+    // canvas in the middle of 1620x2160 device pixels.
+    const l = at(810, 1080, 2, "portrait");
+    expect(l.cssScale).toBeCloseTo(0.84, 2);
+    expect(l.vw * l.scale).toBeLessThanOrEqual(l.dw);
+    expect(l.dw - l.vw * l.scale).toBeLessThan(4);
+    expect(l.dh - l.vh * l.scale).toBeLessThan(4);
+  });
+});
+
+describe("a touch screen", () => {
+  function touchAt(w: number, h: number, dpr: number): Layout {
+    Object.defineProperty(window, "devicePixelRatio", { value: dpr, configurable: true });
+    Object.defineProperty(window, "innerWidth", { value: w, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: h, configurable: true });
+    const l = new Layout(canvasOf(w, h), true);
+    l.measure();
+    return l;
+  }
+
+  it("boosts the type on a phone, where a virtual pixel is half a real one", () => {
+    const phone = touchAt(390, 844, 3);
+    expect(phone.cssScale).toBeCloseTo(390 / 720, 2);
+    expect(phone.touchBoost()).toBeGreaterThan(1.3);
+    expect(phone.touchBoost()).toBeLessThanOrEqual(1.5);
+    expect(phone.uiScale()).toBe(phone.touchBoost());
+  });
+
+  it("leaves a tablet alone, where the fit is already close", () => {
+    const tablet = touchAt(810, 1080, 2);
+    expect(tablet.touchBoost()).toBe(1);
+  });
+
+  it("puts a floor under button heights that a finger can land on", () => {
+    const phone = touchAt(390, 844, 3);
+    // 40 CSS pixels, in virtual ones.
+    expect(phone.minTouchH() * phone.cssScale).toBeGreaterThanOrEqual(40);
+    expect(at(1280, 720).minTouchH()).toBe(0);
+  });
+
+  it("does not boost a small desktop window, which can be made bigger", () => {
+    expect(at(640, 360).touchBoost()).toBe(1);
+  });
 });
 
 describe("uiScale", () => {
@@ -133,5 +201,12 @@ describe("pointer positions", () => {
   it("are null on the letterbox rather than on the game", () => {
     const l = at(1280, 4000, 1, "landscape");
     expect(l.toVirtual(0, 0)).toBeNull();
+  });
+
+  it("round-trip through toClient, on a Retina display too", () => {
+    const l = at(1440, 900, 2, "landscape");
+    const [cx, cy] = l.toClient(320, 180);
+    expect([cx, cy]).toEqual([320, 180]);
+    expect(l.toVirtual(cx, cy)).toEqual([320, 180]);
   });
 });

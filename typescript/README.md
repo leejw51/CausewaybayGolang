@@ -79,9 +79,19 @@ Not the game. The differences are all places where a browser is not a laptop:
   is a thing a desktop window never does.
 - **Typing on a phone.** The game is one canvas and a canvas cannot take
   focus, so a soft keyboard would never appear. A tap while a blank is open
-  focuses a field nobody can see, and what the keyboard puts in it is read out
-  one character at a time — which is also what makes a Korean or Japanese IME
-  work, since only the finished text ever lands.
+  focuses a field nobody can see, which is kept equal to the answer; whatever
+  the keyboard changes it to, the difference is what gets typed. That is the
+  only way backspace works on every phone (iOS reports nothing at all for a
+  backspace on an empty field), and it is what makes a Korean or Japanese IME
+  work, since only the finished text is ever compared. When the keyboard comes
+  up the stage slides up by the height of it, so the prompt and the buttons
+  stay above the keys rather than under them. ENTER at the end of the prompt
+  is a button, because a phone keyboard's return key is easy to miss.
+- **Fingers.** On a touch screen the type is boosted until a virtual pixel is
+  worth enough of a real one to read, every button gets a floor of 40 CSS
+  pixels under its height, the play buttons wrap onto two rows when one will
+  not hold them, and FULL and PORT/LAND are left out where the device has no
+  fullscreen or turns by itself.
 
 Everything else — the seven languages, AUTO, the two-tier hint, the combo
 pitch climbing with the streak, the fourteen badges, the three tiers of CLEAR
